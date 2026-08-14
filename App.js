@@ -8,17 +8,17 @@ import {SafeAreaProvider } from 'react-native-safe-area-context';
 import {StatusBar} from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import {useFonts,AtkinsonHyperlegible_400Regular,AtkinsonHyperlegible_700Bold} from '@expo-google-fonts/atkinson-hyperlegible';
-import{ThemeProvider, usetheme } from './src/theme/ThemeContext';
+import{ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
 //keep the splash screen visible while fonts load
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function AppShell(){
-    const { colors, isdark}=useTheme();
+    const { colors, isDark}=useTheme();
     return (
         <View style={{flex:1,backgroundColor:colors.background}}>
-            <StatusBar style={isdark?'light':'dark'}/>
+            <StatusBar style={isDark?'light':'dark'}/>
             <RootNavigator/>
         </View>
     );

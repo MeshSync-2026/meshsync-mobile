@@ -27,48 +27,21 @@ export default function MyStatusScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <TopAppBar title="My Status" onSettingsPress={() => {}} />
+      <TopAppBar title="My Status" />
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.marginMobile, paddingTop: spacing.lg, paddingBottom: 48, gap: spacing.lg }}>
-        {/* Hero */}
-        <View style={[styles.hero, { backgroundColor: colors.ink, borderRadius: radius.xl, padding: spacing.lg }]}>
-          <Text style={[typography.labelLg, { color: colors.onInk, opacity: 0.8, textTransform: 'uppercase' }]}>Live Sync</Text>
-          <Text style={[typography.headlineMd, { color: colors.onInk }]}>Update mesh data</Text>
-          <MaterialIcons
-            name="podcasts"
-            size={48}
-            color={colors.onInk}
-            style={{ position: 'absolute', right: 16, opacity: 0.12 }}
-          />
+        <View style={[styles.hero, { backgroundColor: colors.surfaceContainerHigh, borderRadius: radius.xl, padding: spacing.lg }]}>
+          <Text style={[typography.labelLg, { color: colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.6 }]}>Live Sync</Text>
+          <Text style={[typography.headlineLgMobile, { color: colors.onSurface, marginTop: 4 }]}>Update mesh data</Text>
+          <MaterialIcons name="podcasts" size={42} color={colors.onSurfaceVariant} style={{ position: 'absolute', right: 18, top: 24, opacity: 0.35 }} />
         </View>
 
-        <SegmentedGroup
-          icon="home"
-          label="Are you safe?"
-          options={['Safe', 'Need Help', 'Trapped']}
-          value={safety}
-          onChange={setSafety}
-        />
-
+        <SegmentedGroup icon="home" label="Are you safe?" options={['Safe', 'Need Help', 'Trapped']} value={safety} onChange={setSafety} />
         <SegmentedGroup icon="water-drop" label="Water supply" options={['Enough', 'Low', 'None']} value={water} onChange={setWater} />
-
         <SegmentedGroup icon="restaurant" label="Food supply" options={['Enough', 'Low', 'None']} value={food} onChange={setFood} />
+        <SegmentedGroup icon="medical-services" label="Medical status" options={['Uninjured', 'Minor', 'Serious']} value={medical} onChange={setMedical} />
 
-        <SegmentedGroup
-          icon="medical-services"
-          label="Medical status"
-          options={['Uninjured', 'Minor', 'Serious']}
-          value={medical}
-          onChange={setMedical}
-        />
-
-        {/* People stepper */}
-        <View
-          style={[
-            styles.peopleCard,
-            { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md },
-          ]}
-        >
+        <View style={[styles.peopleCard, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]}>
           <View>
             <Text style={[typography.labelLg, { color: colors.onSurface }]}>People with you</Text>
             <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Including yourself</Text>
@@ -76,11 +49,9 @@ export default function MyStatusScreen() {
           <Stepper value={people} onChange={setPeople} />
         </View>
 
-        <PrimaryButton label="Send Status" icon="send" onPress={send} />
+        <PrimaryButton label="Send Status" icon="play-arrow" onPress={send} style={{ backgroundColor: colors.surfaceContainerHighest }} buttonColor="#FFFFFF" textColor="#111827" iconColor="#111827" />
 
-        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, opacity: 0.8, textAlign: 'center', paddingHorizontal: spacing.xl }]}>
-          Updates will be transmitted to the nearest mesh node automatically.
-        </Text>
+        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, textAlign: 'center', paddingHorizontal: spacing.xl, lineHeight: 18 }]}>Updates will be transmitted to the nearest mesh node automatically.</Text>
       </ScrollView>
     </SafeAreaView>
   );

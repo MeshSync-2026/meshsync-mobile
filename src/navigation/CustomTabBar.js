@@ -6,8 +6,8 @@ import { useTheme } from '../theme/ThemeContext';
 
 const ICONS = {
   Home: 'home',
-  Nearby: 'social-distance',
-  MyActivity: 'sync',
+  Nearby: 'my-location',
+  MyActivity: 'check-circle',
 };
 
 const LABELS = {
@@ -25,7 +25,7 @@ export default function CustomTabBar({ state, navigation }) {
       style={[
         styles.container,
         {
-          backgroundColor: colors.surfaceContainerLowest,
+          backgroundColor: colors.background,
           borderTopColor: colors.outlineVariant,
           paddingBottom: Math.max(insets.bottom, spacing.md),
         },
@@ -51,20 +51,20 @@ export default function CustomTabBar({ state, navigation }) {
               styles.tab,
               {
                 borderRadius: radius.full,
-                backgroundColor: focused ? colors.ink : 'transparent',
-                paddingHorizontal: spacing.lg,
+                backgroundColor: focused ? colors.surfaceContainerHighest : 'transparent',
+                width: '28%',
               },
             ]}
           >
             <MaterialIcons
               name={ICONS[route.name]}
-              size={22}
-              color={focused ? colors.onInk : colors.onSurfaceVariant}
+              size={24}
+              color={focused ? colors.onSurface : colors.onSurfaceVariant}
             />
             <Text
               style={[
                 typography.labelLg,
-                { color: focused ? colors.onInk : colors.onSurfaceVariant, marginTop: 2 },
+                { color: focused ? colors.onSurface : colors.onSurfaceVariant, marginTop: 2 },
               ]}
             >
               {LABELS[route.name]}
@@ -83,11 +83,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: 1,
     paddingTop: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
   },
   tab: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
+    minHeight: 64,
   },
 });

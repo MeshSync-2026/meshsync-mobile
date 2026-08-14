@@ -2,6 +2,7 @@
 //wrap the whole app in the theme provider
 //mount navigation
 
+import { useTheme } from "@react-navigation/native";
 import React, { useCallback } from 'react';
 import {View} from 'react-native';
 import {SafeAreaProvider } from 'react-native-safe-area-context';

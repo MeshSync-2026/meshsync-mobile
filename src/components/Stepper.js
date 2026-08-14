@@ -10,7 +10,13 @@ export default function Stepper({ value, onChange, min = 1, max = 99 }) {
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.background, borderColor: colors.outlineVariant, borderRadius: radius.md, padding: spacing.xs, gap: spacing.md },
+        {
+          backgroundColor: colors.background,
+          borderColor: colors.outlineVariant,
+          borderRadius: radius.full,
+          padding: spacing.xs,
+          gap: spacing.md,
+        },
       ]}
     >
       <TouchableOpacity
@@ -20,13 +26,13 @@ export default function Stepper({ value, onChange, min = 1, max = 99 }) {
       >
         <MaterialIcons name="remove" size={20} color={colors.onSurface} />
       </TouchableOpacity>
-      <Text style={[typography.headlineMd, { color: colors.onSurface, width: 28, textAlign: 'center' }]}>{value}</Text>
+      <Text style={[typography.headlineMd, { color: colors.onSurface, width: 32, textAlign: 'center' }]}>{value}</Text>
       <TouchableOpacity
         accessibilityLabel="Increase"
         onPress={() => value < max && onChange(value + 1)}
-        style={[styles.circle, { backgroundColor: colors.ink }]}
+        style={[styles.circle, { backgroundColor: colors.primary, borderColor: colors.primary }]}
       >
-        <MaterialIcons name="add" size={20} color={colors.onInk} />
+        <MaterialIcons name="add" size={20} color={colors.onPrimary} />
       </TouchableOpacity>
     </View>
   );
@@ -39,8 +45,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   circle: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',

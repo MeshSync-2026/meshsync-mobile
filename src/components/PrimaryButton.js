@@ -1,39 +1,74 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { ActivityIndicator, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 
-// Full-bleed horizontal bar used for system-wide sync status, e.g.
-// "Offline - Mesh Active". Matches the "Status Bars" component spec.
-export default function MeshStatusBar({ nodesInRange = 48, label }) {
-  const { colors, spacing, typography } = useTheme();
+export default function PrimaryButton({
+  label,
+  icon,
+  onPress,
+  loading = false,
+  disabled = false,
+  style,
+  buttonColor,
+  textColor,
+  iconColor,
+  labelStyle,
+}) {
+  const { colors, spacing, radius, typography } = useTheme();
+  const isDisabled = disabled || loading;
+  const resolvedButtonColor = buttonColor || (isDisabled ? colors.surfaceContainerHigh : colors.primary);
+  const resolvedTextColor = textColor || colors.onPrimary;
+  const resolvedIconColor = iconColor || colors.onPrimary;
 
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={isDisabled ? 1 : 0.9}
+      disabled={isDisabled}
+      onPress={isDisabled ? undefined : onPress}
       style={[
-        styles.container,
-        { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile },
+        styles.button,
+        {
+          backgroundColor: resolvedButtonColor,
+          borderRadius: radius.full,
+          paddingVertical: spacing.md,
+          minHeight: 52,
+        },
+        style,
       ]}
     >
-      <MaterialIcons name="wifi-off" size={16} color={colors.onSurfaceVariant} />
-      <Text style={[typography.labelLg, styles.label, { color: colors.onSurfaceVariant }]}>
-        {label || `Offline - Mesh Active (${nodesInRange} nodes)`}
-      </Text>
-    </View>
+      <View style={styles.content}>
+        {loading ? (
+          <ActivityIndicator size="small" color={resolvedTextColor} />
+        ) : icon ? (
+          <MaterialIcons name={icon} size={20} color={resolvedIconColor} />
+        ) : null}
+
+        <Text style={[typography.labelLg, styles.label, { color: resolvedTextColor }, labelStyle]}>{label}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  button: {
     width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  content: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
   },
   label: {
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

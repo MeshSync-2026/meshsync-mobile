@@ -3,8 +3,6 @@ import { View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 
-// Full-bleed horizontal bar used for system-wide sync status, e.g.
-// "Offline - Mesh Active". Matches the "Status Bars" component spec.
 export default function MeshStatusBar({ nodesInRange = 48, label }) {
   const { colors, spacing, typography } = useTheme();
 
@@ -12,11 +10,15 @@ export default function MeshStatusBar({ nodesInRange = 48, label }) {
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile },
+        {
+          backgroundColor: colors.background,
+          borderBottomColor: colors.outlineVariant,
+          paddingHorizontal: spacing.marginMobile,
+        },
       ]}
     >
-      <MaterialIcons name="wifi-off" size={16} color={colors.onSurfaceVariant} />
-      <Text style={[typography.labelLg, styles.label, { color: colors.onSurfaceVariant }]}>
+      <MaterialIcons name="wifi-off" size={14} color={colors.onSurfaceVariant} />
+      <Text style={[typography.labelLg, styles.label, { color: colors.onSurface }]}>
         {label || `Offline - Mesh Active (${nodesInRange} nodes)`}
       </Text>
     </View>
@@ -30,10 +32,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderBottomWidth: 1,
   },
   label: {
     textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
 });

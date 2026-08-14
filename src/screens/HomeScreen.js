@@ -8,7 +8,7 @@ import { meshStatus } from '../data/mockData';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const { colors, spacing, radius, typography } = useTheme();
+  const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
 
   const pressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
@@ -27,13 +27,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* Top status bar */}
-      <View
-        style={[
-          styles.header,
-          { backgroundColor: colors.surfaceContainerLowest, borderBottomColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile },
-        ]}
-      >
+      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile }]}>
         <View style={styles.headerLeft}>
           <MaterialIcons name="hub" size={18} color={colors.onSurface} />
           <View>
@@ -41,20 +35,12 @@ export default function HomeScreen() {
             <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>{meshStatus.lastSynced}</Text>
           </View>
         </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Profile')}>
-            <MaterialIcons name="account-circle" size={24} color={colors.onSurface} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.iconBtn} onPress={toggleScheme}>
+          <MaterialIcons name={isDark ? 'light-mode' : 'dark-mode'} size={24} color={colors.onSurface} />
+        </TouchableOpacity>
       </View>
 
-      {/* Away banner */}
-      <TouchableOpacity
-        style={[
-          styles.banner,
-          { backgroundColor: colors.surfaceContainerLowest, borderBottomColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile },
-        ]}
-      >
+      <TouchableOpacity style={[styles.banner, { backgroundColor: colors.surfaceContainerLow, borderBottomColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile }]}>
         <View style={styles.headerLeft}>
           <MaterialIcons name="home-work" size={20} color={colors.onSurfaceVariant} />
           <Text style={[typography.labelLg, { color: colors.onSurface }]}>Away from home?</Text>
@@ -62,7 +48,6 @@ export default function HomeScreen() {
         <MaterialIcons name="chevron-right" size={20} color={colors.onSurfaceVariant} />
       </TouchableOpacity>
 
-      {/* Main canvas */}
       <View style={[styles.main, { paddingHorizontal: spacing.marginMobile }]}>
         <View style={styles.sosWrap}>
           <View style={[styles.ring, { width: 224, height: 224, borderColor: colors.secondary + '33' }]} />
@@ -76,37 +61,27 @@ export default function HomeScreen() {
               onPress={triggerSOS}
               style={[styles.sosButton, { backgroundColor: colors.secondary, borderColor: colors.secondaryDark }]}
             >
-              <MaterialIcons name="emergency" size={56} color={colors.onSecondary} />
-              <Text style={[typography.headlineMd, { color: colors.onSecondary, marginTop: 4, letterSpacing: 2 }]}>SOS</Text>
+              <MaterialIcons name="priority-high" size={48} color={colors.onSecondary} />
+              <Text style={[typography.headlineMd, { color: colors.onSecondary, marginTop: 6, letterSpacing: 2 }]}>SOS</Text>
             </TouchableOpacity>
           </Animated.View>
 
           <View style={{ marginTop: spacing.lg, alignItems: 'center' }}>
             <Text style={[typography.headlineMd, { color: colors.onSurface }]}>Emergency Help</Text>
-            <Text
-              style={[typography.bodyMd, { color: colors.onSurfaceVariant, marginTop: 4, textAlign: 'center', maxWidth: 240 }]}
-            >
-              Tap for immediate local assistance
-            </Text>
+            <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, marginTop: 4, textAlign: 'center', maxWidth: 240 }]}>Tap for immediate local assistance</Text>
           </View>
         </View>
 
         <View style={[styles.grid, { gap: spacing.md, marginTop: spacing.xl }]}>
-          <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]}
-            onPress={() => navigation.navigate('ReportHazard')}
-          >
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]} onPress={() => navigation.navigate('ReportHazard')}>
             <View style={[styles.actionIcon, { borderColor: colors.outlineVariant, borderRadius: radius.md }]}>
-              <MaterialIcons name="report" size={22} color={colors.onSurface} />
+              <MaterialIcons name="warning" size={22} color={colors.onSurface} />
             </View>
             <Text style={[typography.labelLg, { color: colors.onSurface }]}>Report Hazard</Text>
             <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, marginTop: 4 }]}>Flood, fire, or blocked roads</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]}
-            onPress={() => navigation.navigate('MyStatus')}
-          >
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]} onPress={() => navigation.navigate('MyStatus')}>
             <View style={[styles.actionIcon, { borderColor: colors.outlineVariant, borderRadius: radius.md }]}>
               <MaterialIcons name="check-circle" size={22} color={colors.onSurface} />
             </View>
@@ -128,13 +103,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 9999 },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
   },
   main: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -155,5 +129,5 @@ const styles = StyleSheet.create({
   },
   grid: { flexDirection: 'row', width: '100%' },
   actionCard: { flex: 1, borderWidth: 1 },
-  actionIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, marginBottom: 8 },
+  actionIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderWidth: 1, marginBottom: 8 },
 });

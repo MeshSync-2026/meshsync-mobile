@@ -10,9 +10,7 @@ export default function SegmentedGroup({ icon, label, options, value, onChange }
     <View style={{ gap: spacing.sm }}>
       <View style={styles.labelRow}>
         <MaterialIcons name={icon} size={20} color={colors.onSurface} />
-        <Text style={[typography.labelLg, { color: colors.onSurfaceVariant, fontFamily: typography.bodyMd?.fontFamily }]}>
-          {label}
-        </Text>
+        <Text style={[typography.labelLg, { color: colors.onSurface, fontWeight: '700' }]}>{label}</Text>
       </View>
       <View style={[styles.track, { gap: spacing.sm }]}>
         {options.map((opt) => {
@@ -27,7 +25,7 @@ export default function SegmentedGroup({ icon, label, options, value, onChange }
                 {
                   borderRadius: radius.md,
                   borderColor: colors.outlineVariant,
-                  backgroundColor: active ? colors.ink : colors.surfaceContainerLowest,
+                  backgroundColor: active ? colors.surfaceContainerHighest : colors.surfaceContainer,
                 },
               ]}
             >
@@ -35,7 +33,7 @@ export default function SegmentedGroup({ icon, label, options, value, onChange }
                 style={[
                   typography.labelLg,
                   {
-                    color: active ? colors.onInk : colors.onSurface,
+                    color: active ? colors.onSurface : colors.onSurfaceVariant,
                     fontWeight: active ? '700' : '400',
                   },
                 ]}

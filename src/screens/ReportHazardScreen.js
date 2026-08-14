@@ -31,21 +31,14 @@ export default function ReportHazardScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <TopAppBar title="Report a Hazard" onSettingsPress={() => {}} />
+      <TopAppBar title="Report a Hazard" />
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.marginMobile, paddingTop: spacing.md, paddingBottom: 140 }}>
-        {/* Offline banner */}
-        <View
-          style={[
-            styles.offlineBanner,
-            { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.lg },
-          ]}
-        >
-          <MaterialIcons name="cloud-off" size={20} color={colors.onSurface} />
+        <View style={[styles.offlineBanner, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.lg }]}>
+          <MaterialIcons name="cloud-off" size={18} color={colors.onSurface} />
           <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>Offline - Mesh Active</Text>
         </View>
 
-        {/* Category grid */}
         <View style={{ marginBottom: spacing.xl }}>
           <View style={styles.rowBetween}>
             <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>Select Category</Text>
@@ -61,60 +54,34 @@ export default function ReportHazardScreen() {
                   style={[
                     styles.categoryCard,
                     {
-                      backgroundColor: active ? colors.ink : colors.surfaceContainerLowest,
-                      borderColor: active ? colors.ink : colors.outlineVariant,
+                      backgroundColor: active ? colors.surfaceContainerHighest : colors.surfaceContainerHigh,
+                      borderColor: active ? colors.outlineVariant : colors.outlineVariant,
                       borderRadius: radius.xl,
                       padding: spacing.md,
                     },
                   ]}
                 >
-                  <MaterialIcons name={cat.icon} size={30} color={active ? colors.onInk : colors.onSurface} style={{ marginBottom: 8 }} />
-                  <Text style={[typography.labelLg, { color: active ? colors.onInk : colors.onSurface }]}>{cat.label}</Text>
+                  <MaterialIcons name={cat.icon} size={28} color={colors.onSurface} style={{ marginBottom: 8 }} />
+                  <Text style={[typography.labelLg, { color: colors.onSurface }]}>{cat.label}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
         </View>
 
-        {/* Location note */}
-        <View
-          style={[
-            styles.locationNote,
-            { backgroundColor: colors.surfaceContainer, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.xl },
-          ]}
-        >
+        <View style={[styles.locationNote, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.xl }]}>
           <MaterialIcons name="my-location" size={20} color={colors.onSurface} />
-          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, flex: 1 }]}>
-            Your high-precision location will be captured automatically via GPS/Mesh relay.
-          </Text>
+          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, flex: 1 }]}>Your high-precision location will be captured automatically via GPS/Mesh relay.</Text>
         </View>
 
-        {/* Form */}
         <View style={{ gap: spacing.lg, marginBottom: spacing.xl }}>
-          <Field
-            label="Short Title (Optional)"
-            value={title}
-            onChangeText={setTitle}
-            placeholder="e.g. Broken power line near park"
-          />
-          <Field
-            label="Details (Optional)"
-            value={details}
-            onChangeText={setDetails}
-            placeholder="Provide extra context for emergency responders..."
-            multiline
-          />
+          <Field label="Short Title (Optional)" value={title} onChangeText={setTitle} placeholder="e.g. Broken power line near park" />
+          <Field label="Details (Optional)" value={details} onChangeText={setDetails} placeholder="Provide extra context for emergency responders..." multiline />
         </View>
 
-        {/* Severity */}
         <View style={{ marginBottom: spacing.xl }}>
           <Text style={[typography.labelLg, { color: colors.onSurface, marginBottom: spacing.md }]}>Severity Level</Text>
-          <View
-            style={[
-              styles.severityTrack,
-              { backgroundColor: colors.surfaceContainer, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: 4 },
-            ]}
-          >
+          <View style={[styles.severityTrack, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: 4 }]}>
             {SEVERITIES.map((level) => {
               const active = severity === level;
               return (
@@ -144,12 +111,12 @@ function Field({ label, ...props }) {
     <View style={{ gap: spacing.xs }}>
       <Text style={[typography.labelLg, { color: colors.onSurface }]}>{label}</Text>
       <TextInput
-        placeholderTextColor={colors.outline}
+        placeholderTextColor={colors.onSurfaceVariant + '80'}
         style={[
           styles.input,
           {
             borderColor: colors.outlineVariant,
-            backgroundColor: colors.surfaceContainerLowest,
+            backgroundColor: colors.surfaceContainerHigh,
             borderRadius: radius.md,
             color: colors.onSurface,
             height: props.multiline ? 100 : 48,

@@ -8,11 +8,14 @@ export default function TopAppBar({
   title,
   showBack = true,
   onSettingsPress,
-  rightIcon = 'settings',
+  rightIcon,
   onRightPress,
 }) {
   const navigation = useNavigation();
-  const { colors, spacing, typography } = useTheme();
+  const { colors, spacing, typography, isDark, toggleScheme } = useTheme();
+
+  const resolvedRightIcon = rightIcon || (isDark ? 'light-mode' : 'dark-mode');
+  const resolvedOnRightPress = onRightPress || onSettingsPress || toggleScheme;
 
   return (
     <View
@@ -33,23 +36,22 @@ export default function TopAppBar({
             style={styles.iconBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
+            <MaterialIcons name="arrow-back" size={26} color={colors.onSurface} />
           </TouchableOpacity>
         ) : null}
         <Text style={[typography.headlineMd, { color: colors.onSurface }]} numberOfLines={1}>
           {title}
         </Text>
       </View>
-      {(onSettingsPress || onRightPress) && (
-        <TouchableOpacity
-          accessibilityLabel="Settings"
-          onPress={onRightPress || onSettingsPress}
-          style={styles.iconBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <MaterialIcons name={rightIcon} size={24} color={colors.onSurfaceVariant} />
-        </TouchableOpacity>
-      )}
+
+      <TouchableOpacity
+        accessibilityLabel="Toggle theme"
+        onPress={resolvedOnRightPress}
+        style={styles.iconBtn}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <MaterialIcons name={resolvedRightIcon} size={22} color={colors.onSurface} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -57,7 +59,7 @@ export default function TopAppBar({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    minHeight: 56,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -71,8 +73,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   iconBtn: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 9999,

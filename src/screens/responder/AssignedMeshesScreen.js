@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -28,11 +28,16 @@ const MOCK_MESHES = [
 export default function AssignedMeshesScreen({ navigation }) {
   const { colors, spacing, radius, typography } = useTheme();
 
+  // Responder duty state
+  const [isOnDuty, setIsOnDuty] = useState(true);
+
   return (
     <SafeAreaView
       style={[
         styles.container,
-        { backgroundColor: colors.background },
+        {
+          backgroundColor: colors.background,
+        },
       ]}
       edges={['top', 'bottom']}
     >
@@ -46,11 +51,14 @@ export default function AssignedMeshesScreen({ navigation }) {
           },
         ]}
       >
+        {/* Header title */}
         <View>
           <Text
             style={[
               typography.headlineMd,
-              { color: colors.onSurface },
+              {
+                color: colors.onSurface,
+              },
             ]}
           >
             Responder
@@ -59,40 +67,56 @@ export default function AssignedMeshesScreen({ navigation }) {
           <Text
             style={[
               typography.bodyMd,
-              { color: colors.onSurfaceVariant },
+              {
+                color: colors.onSurfaceVariant,
+              },
             ]}
           >
             Assigned meshes
           </Text>
         </View>
 
-        <View
-          style={[
+        {/* Active Duty Toggle */}
+        <Pressable
+          onPress={() => setIsOnDuty((current) => !current)}
+          style={({ pressed }) => [
             styles.statusBadge,
             {
-              backgroundColor: colors.surfaceContainer,
+              backgroundColor: isOnDuty
+                ? colors.onSurface
+                : colors.surfaceContainer,
               borderColor: colors.outlineVariant,
+              opacity: pressed ? 0.75 : 1,
             },
           ]}
         >
           <View
             style={[
               styles.statusDot,
-              { backgroundColor: colors.onSurface },
+              {
+                backgroundColor: isOnDuty
+                  ? colors.background
+                  : colors.onSurfaceVariant,
+              },
             ]}
           />
 
           <Text
             style={[
               typography.labelMd,
-              { color: colors.onSurface },
+              {
+                color: isOnDuty
+                  ? colors.background
+                  : colors.onSurface,
+              },
             ]}
           >
-            ACTIVE
+            {isOnDuty ? 'ON DUTY' : 'OFF DUTY'}
           </Text>
-        </View>
+        </Pressable>
       </View>
 
+      {/* Main content */}
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: spacing.marginMobile,
@@ -106,30 +130,90 @@ export default function AssignedMeshesScreen({ navigation }) {
           <Text
             style={[
               typography.headlineLgMobile,
-              { color: colors.onSurface },
+              {
+                color: colors.onSurface,
+              },
             ]}
           >
-            Your active meshes
+            {isOnDuty ? 'Your active meshes' : 'You are off duty'}
           </Text>
 
           <Text
             style={[
               typography.bodyMd,
-              { color: colors.onSurfaceVariant },
+              {
+                color: colors.onSurfaceVariant,
+              },
             ]}
           >
-            Select a mesh to view the incidents assigned to you.
+            {isOnDuty
+              ? 'Select a mesh to view the incidents assigned to you.'
+              : 'Turn on duty status to receive and manage assigned incidents.'}
           </Text>
         </View>
+
+        {/* Off-duty information */}
+        {!isOnDuty && (
+          <View
+            style={[
+              styles.offDutyCard,
+              {
+                backgroundColor: colors.surfaceContainer,
+                borderColor: colors.outlineVariant,
+                borderRadius: radius.xl,
+                padding: spacing.md,
+              },
+            ]}
+          >
+            <MaterialIcons
+              name="pause-circle-outline"
+              size={24}
+              color={colors.onSurface}
+            />
+
+            <View
+              style={{
+                flex: 1,
+                gap: spacing.xs,
+              }}
+            >
+              <Text
+                style={[
+                  typography.titleLg,
+                  {
+                    color: colors.onSurface,
+                  },
+                ]}
+              >
+                Not receiving incidents
+              </Text>
+
+              <Text
+                style={[
+                  typography.bodyMd,
+                  {
+                    color: colors.onSurfaceVariant,
+                  },
+                ]}
+              >
+                You are currently off duty. Turn on duty to access and manage
+                incidents assigned to your meshes.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Mesh cards */}
         {MOCK_MESHES.map((mesh) => (
           <Pressable
             key={mesh.id}
+            disabled={!isOnDuty}
             onPress={() => {
-                navigation.navigate('IncidentList', {
-                    mesh,
-                });
+              if (!isOnDuty) return;
+
+              navigation.navigate('IncidentList', {
+                mesh,
+              });
             }}
             style={({ pressed }) => [
               styles.meshCard,
@@ -138,16 +222,30 @@ export default function AssignedMeshesScreen({ navigation }) {
                 borderColor: colors.outlineVariant,
                 borderRadius: radius.xl,
                 padding: spacing.md,
-                opacity: pressed ? 0.75 : 1,
+
+                // Disabled when off duty
+                opacity: !isOnDuty
+                  ? 0.45
+                  : pressed
+                    ? 0.75
+                    : 1,
               },
             ]}
           >
+            {/* Mesh header */}
             <View style={styles.meshHeader}>
-              <View style={{ flex: 1, gap: spacing.xs }}>
+              <View
+                style={{
+                  flex: 1,
+                  gap: spacing.xs,
+                }}
+              >
                 <Text
                   style={[
                     typography.titleLg,
-                    { color: colors.onSurface },
+                    {
+                      color: colors.onSurface,
+                    },
                   ]}
                 >
                   {mesh.name}
@@ -156,7 +254,9 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <Text
                   style={[
                     typography.labelMd,
-                    { color: colors.onSurfaceVariant },
+                    {
+                      color: colors.onSurfaceVariant,
+                    },
                   ]}
                 >
                   Mesh {mesh.id}
@@ -170,19 +270,26 @@ export default function AssignedMeshesScreen({ navigation }) {
               />
             </View>
 
+            {/* Divider */}
             <View
               style={[
                 styles.divider,
-                { backgroundColor: colors.outlineVariant },
+                {
+                  backgroundColor: colors.outlineVariant,
+                },
               ]}
             />
 
+            {/* Mesh statistics */}
             <View style={styles.statsRow}>
+              {/* SOS */}
               <View style={styles.stat}>
                 <Text
                   style={[
                     typography.headlineMd,
-                    { color: colors.onSurface },
+                    {
+                      color: colors.onSurface,
+                    },
                   ]}
                 >
                   {mesh.sos}
@@ -191,18 +298,23 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <Text
                   style={[
                     typography.labelMd,
-                    { color: colors.onSurfaceVariant },
+                    {
+                      color: colors.onSurfaceVariant,
+                    },
                   ]}
                 >
                   SOS
                 </Text>
               </View>
 
+              {/* Hazards */}
               <View style={styles.stat}>
                 <Text
                   style={[
                     typography.headlineMd,
-                    { color: colors.onSurface },
+                    {
+                      color: colors.onSurface,
+                    },
                   ]}
                 >
                   {mesh.hazards}
@@ -211,7 +323,9 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <Text
                   style={[
                     typography.labelMd,
-                    { color: colors.onSurfaceVariant },
+                    {
+                      color: colors.onSurfaceVariant,
+                    },
                   ]}
                 >
                   Hazards
@@ -252,6 +366,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+
+  offDutyCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderWidth: 1,
   },
 
   meshCard: {

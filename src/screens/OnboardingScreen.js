@@ -13,7 +13,6 @@ export default function OnboardingScreen() {
   const [fullName, setFullName] = useState('');
   const [nic, setNic] = useState('');
   const [phone, setPhone] = useState('');
-  const [landmark, setLandmark] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const continueSetup = () => {
@@ -67,21 +66,7 @@ export default function OnboardingScreen() {
             <Text style={[typography.labelLg, { color: colors.onSurfaceVariant, textTransform: 'uppercase' }]}>Your Home Location</Text>
           </View>
 
-          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant }]}>Identify your location to receive relevant local alerts.</Text>
-
-          <View style={[styles.mapPlaceholder, { backgroundColor: '#CBE6F0', borderColor: colors.outlineVariant, borderRadius: radius.md }]}>
-            <View style={styles.mapGrid} />
-            <View style={styles.mapRiver} />
-            <View style={styles.mapRoadOne} />
-            <View style={styles.mapRoadTwo} />
-            <MaterialIcons name="location-pin" size={36} color="#E9437A" style={styles.pin} />
-            <TouchableOpacity style={[styles.locateBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
-              <MaterialIcons name="my-location" size={18} color={colors.onSurface} />
-            </TouchableOpacity>
-          </View>
-
-          <Field label="Local Landmark / Village Name" value={landmark} onChangeText={setLandmark} placeholder="e.g. Near the Old Banyan Tree" />
-          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, fontStyle: 'italic' }]}>Helps neighbors identify your area without precise GPS.</Text>
+          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant }]}>Your home location is your current location and is fetched automatically to receive relevant local alerts.</Text>
         </View>
 
         <View style={{ gap: spacing.sm }}>
@@ -162,64 +147,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 16,
     fontSize: 16,
-  },
-  mapPlaceholder: {
-    height: 160,
-    borderWidth: 1,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  mapGrid: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  mapRiver: {
-    position: 'absolute',
-    top: 24,
-    left: -20,
-    width: 240,
-    height: 140,
-    backgroundColor: 'rgba(118, 195, 228, 0.55)',
-    borderRadius: 60,
-    transform: [{ rotate: '-18deg' }],
-  },
-  mapRoadOne: {
-    position: 'absolute',
-    top: 60,
-    left: 36,
-    width: 220,
-    height: 12,
-    backgroundColor: 'rgba(255,255,255,0.52)',
-    borderRadius: 16,
-    transform: [{ rotate: '18deg' }],
-  },
-  mapRoadTwo: {
-    position: 'absolute',
-    top: 92,
-    left: 88,
-    width: 200,
-    height: 10,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    borderRadius: 16,
-    transform: [{ rotate: '-18deg' }],
-  },
-  pin: {
-    position: 'absolute',
-    top: 62,
-    left: '50%',
-    marginLeft: -18,
-  },
-  locateBtn: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

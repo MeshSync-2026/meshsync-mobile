@@ -204,45 +204,44 @@ export default function IncidentDetailsScreen({ route, navigation }) {
         </View>
 
         {/* Status */}
-        <View
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surfaceContainerLowest,
-              borderColor: colors.outlineVariant,
-              borderRadius: radius.xl,
-              padding: spacing.md,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              typography.labelMd,
-              { color: colors.onSurfaceVariant },
-            ]}
-          >
-            CURRENT STATUS
-          </Text>
+<View
+  style={[
+    styles.card,
+    {
+      backgroundColor: colors.surfaceContainerLowest,
+      borderColor: colors.outlineVariant,
+      borderRadius: radius.xl,
+      padding: spacing.md,
+    },
+  ]}
+>
+  <Text
+    style={[
+      typography.labelMd,
+      { color: colors.onSurfaceVariant },
+    ]}
+  >
+    CURRENT STATUS
+  </Text>
 
-          <View style={styles.statusRow}>
-            <View
-              style={[
-                styles.statusDot,
-                { backgroundColor: colors.onSurface },
-              ]}
-            />
+  <View style={styles.statusRow}>
+    <View
+      style={[
+        styles.statusDot,
+        { backgroundColor: colors.onSurface },
+      ]}
+    />
 
-            <Text
-              style={[
-                typography.titleLg,
-                { color: colors.onSurface },
-              ]}
-            >
-              ACTIVE
-            </Text>
-          </View>
-        </View>
-
+    <Text
+      style={[
+        typography.titleLg,
+        { color: colors.onSurface },
+      ]}
+    >
+      {(incident.status || 'active').toUpperCase()}
+    </Text>
+  </View>
+</View>
         {/* Actions */}
         <Pressable
           onPress={() => {
@@ -277,8 +276,11 @@ export default function IncidentDetailsScreen({ route, navigation }) {
 
         <Pressable
           onPress={() => {
-            console.log('Update status for:', incident.id);
-          }}
+  navigation.navigate('UpdateIncidentStatus', {
+    incident,
+    mesh,
+  });
+}}
           style={[
             styles.secondaryButton,
             {

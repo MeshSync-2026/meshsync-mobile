@@ -17,7 +17,6 @@ export default function RadarView() {
   return (
     <View style={{ alignItems: 'center' }}>
       <View style={[styles.radar, { width: SIZE, height: SIZE }]}>
-        {/* Concentric rings */}
         <View style={[styles.ring, { width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderColor: colors.outlineVariant }]} />
         <View
           style={[
@@ -32,17 +31,14 @@ export default function RadarView() {
           ]}
         />
 
-        {/* Compass labels */}
         <Text style={[styles.compass, { top: 4, color: colors.primary }]}>N</Text>
         <Text style={[styles.compass, { bottom: 4, color: colors.primary }]}>S</Text>
         <Text style={[styles.compass, { left: 4, color: colors.primary }]}>W</Text>
         <Text style={[styles.compass, { right: 4, color: colors.primary }]}>E</Text>
 
-        {/* Center "You" marker */}
         <View style={[styles.youDot, { backgroundColor: colors.ink, borderColor: colors.white }]} />
         <Text style={[styles.youLabel, { color: colors.onSurfaceVariant }]}>You</Text>
 
-        {/* Plotted reports */}
         {radarPeers.map((p) => (
           <View
             key={p.id}

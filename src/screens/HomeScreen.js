@@ -35,9 +35,25 @@ export default function HomeScreen() {
             <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>{meshStatus.lastSynced}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.iconBtn} onPress={toggleScheme}>
-          <MaterialIcons name={isDark ? 'light-mode' : 'dark-mode'} size={24} color={colors.onSurface} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => navigation.navigate('Profile')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to profile"
+          >
+            <MaterialIcons name="account-circle" size={24} color={colors.onSurface} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={toggleScheme}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle theme"
+          >
+            <MaterialIcons name={isDark ? 'light-mode' : 'dark-mode'} size={24} color={colors.onSurface} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <TouchableOpacity style={[styles.banner, { backgroundColor: colors.surfaceContainerLow, borderBottomColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile }]}>
@@ -103,6 +119,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 9999 },
   banner: {
     flexDirection: 'row',

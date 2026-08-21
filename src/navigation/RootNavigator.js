@@ -9,6 +9,8 @@ import ReportHazardScreen from '../screens/ReportHazardScreen';
 import MyStatusScreen from '../screens/MyStatusScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
+import ResponderNavigator from './ResponderNavigator';
+
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
@@ -31,6 +33,7 @@ export default function RootNavigator() {
       <Stack.Navigator initialRouteName="Onboarding" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="Main" component={BottomTabs} />
+        <Stack.Screen name="Responder" component={ResponderNavigator}/>
         <Stack.Screen name="ReportHazard" component={ReportHazardScreen} options={{ presentation: 'modal' }} />
         <Stack.Screen name="MyStatus" component={MyStatusScreen} options={{ presentation: 'modal' }} />
         <Stack.Screen name="Profile" component={ProfileScreen} />

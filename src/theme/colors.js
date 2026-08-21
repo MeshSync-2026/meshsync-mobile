@@ -1,5 +1,3 @@
-// Background is warm off-white, teal is informational, red is reserved
-// strictly for SOS/emergency actions, amber = warning, green = success.
 
 export const light = {
   background: '#FAFAFA',
@@ -19,26 +17,22 @@ export const light = {
   outline: '#757575',
   outlineVariant: '#E0E0E0',
 
-  // Informational (primary) - deep teal
   primary: '#005155',
   onPrimary: '#FFFFFF',
   primaryContainer: '#006B70',
   onPrimaryContainer: '#98E9EE',
 
-  // Emergency (secondary) - reserved for SOS only
   secondary: '#B6171E',
   onSecondary: '#FFFFFF',
   secondaryContainer: '#DA3433',
   onSecondaryContainer: '#FFFBFF',
   secondaryDark: '#930010',
 
-  // Warning (tertiary) - amber
   tertiary: '#F57C00',
   onTertiary: '#FFFFFF',
   tertiaryContainer: '#984B00',
   onTertiaryContainer: '#FFD2B7',
 
-  // Success - grounded green
   success: '#2E7D32',
   onSuccess: '#FFFFFF',
 
@@ -47,7 +41,6 @@ export const light = {
   errorContainer: '#FFDAD6',
   onErrorContainer: '#93000A',
 
-  // Neutrals used for "black/white" high-contrast UI elements in the mocks
   ink: '#000000',
   onInk: '#FFFFFF',
   white: '#FFFFFF',

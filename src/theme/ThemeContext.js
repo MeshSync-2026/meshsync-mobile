@@ -1,16 +1,3 @@
-/*
- * Theme Flow
- * 1. ThemeProvider initializes.
- * 2. Detect the device's current theme.
- * 3. Select the light or dark color palette.
- * 4. Create a theme object containing colors, spacing,
- *    typography, radius, and helper functions.
- * 5. Provide the theme through ThemeContext.Provider.
- * 6. Components use useTheme() to access the theme.
- * 7. Components can read or change the current theme.
- */
-
-
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { Appearance } from 'react-native';
 import { light, dark } from './colors';

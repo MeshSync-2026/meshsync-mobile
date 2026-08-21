@@ -1,6 +1,4 @@
-// Typography scale, mirrors the design tokens in DESIGN.md.
-// Atkinson Hyperlegible is engineered for maximum legibility -- ideal for
-// people reading under physical duress or with visual impairments.
+// Atkinson Hyperlegible for high legibility
 
 export const fontFamily = {
   regular: 'AtkinsonHyperlegible_400Regular',

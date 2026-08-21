@@ -6,11 +6,10 @@ import { useTheme } from '../theme/ThemeContext';
 import TopAppBar from '../components/TopAppBar';
 import { profile } from '../data/mockData';
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
   const [relayAuto, setRelayAuto] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <TopAppBar title="Profile" rightIcon={isDark ? 'light-mode' : 'dark-mode'} onRightPress={toggleScheme} />
@@ -21,10 +20,26 @@ export default function ProfileScreen() {
             <View style={[styles.avatar, { backgroundColor: colors.surfaceVariant, borderColor: colors.surfaceContainerHigh }]}>
               <MaterialIcons name="person" size={36} color={colors.onSurfaceVariant} />
             </View>
-            <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{profile.name}</Text>
+            <View>
+              <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{profile.name}</Text>
+            </View>
           </View>
           <TouchableOpacity style={[styles.iconCircle, { backgroundColor: colors.surfaceContainer }]}>
             <MaterialIcons name="edit" size={20} color={colors.onSurface} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.responderCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]}>
+          <View style={styles.rowGap}>
+            <MaterialIcons name="verified-user" size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.labelLg, { color: colors.onSurface }]}>Authorized Responder</Text>
+              <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, marginTop: 4 }]}>Sign in to access assigned meshes and offline maps.</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={[styles.responderButton, { backgroundColor: colors.primary, borderRadius: radius.md }]} onPress={() => navigation.navigate('Responder')}>
+            <Text style={[typography.labelLg, { color: colors.onPrimary }]}>Authenticate as Responder</Text>
+            <MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />
           </TouchableOpacity>
         </View>
 
@@ -136,4 +151,7 @@ const styles = StyleSheet.create({
   locationCard: { borderWidth: 1 },
   chip: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 9999, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8 },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 16 },
+  responderCard: { borderWidth: 1, gap: 16 },
+  responderButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+
 });

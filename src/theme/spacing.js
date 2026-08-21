@@ -1,4 +1,4 @@
-// 4px baseline grid, matches DESIGN.md spacing tokens.
+// 4px baseline grid
 export const spacing = {
   xs: 4,
   sm: 8,

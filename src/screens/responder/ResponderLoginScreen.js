@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+
 import {
   View,
   Text,
@@ -9,331 +10,794 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../../theme/ThemeContext';
 
-export default function ResponderLoginScreen({ navigation }) {
-  const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+import { useTheme } from '../../theme/ThemeContext';
+import { responderCredentials } from '../../data/mockData';
+
+import {
+  saveResponderSession,
+  clearResponderSession,
+} from '../../utils/storage';
+
+
+export default function ResponderLoginScreen({
+  navigation,
+}) {
+  const {
+    colors,
+    spacing,
+    radius,
+    typography,
+    isDark,
+    toggleScheme,
+  } = useTheme();
 
   const [responderId, setResponderId] = useState('');
   const [pin, setPin] = useState('');
-  const [rememberDevice, setRememberDevice] = useState(true);
-  const [showPin, setShowPin] = useState(false);
-  const [loggingIn, setLoggingIn] = useState(false);
 
-  const canLogin = responderId.trim().length > 0 && pin.length >= 4;
+  const [rememberDevice, setRememberDevice] =
+    useState(true);
 
-  const handleLogin = () => {
-    if (!canLogin || loggingIn) return;
+  const [showPin, setShowPin] =
+    useState(false);
 
+  const [loggingIn, setLoggingIn] =
+    useState(false);
+
+  const [loginError, setLoginError] =
+    useState('');
+
+
+  /*
+   * Login button becomes enabled only when:
+   *
+   * Responder ID is entered
+   * AND
+   * PIN contains at least 4 digits
+   */
+
+  const canLogin =
+    responderId.trim().length > 0 &&
+    pin.trim().length >= 4;
+
+
+  /*
+   * =========================
+   * LOGIN
+   * =========================
+   */
+
+  const handleLogin = async () => {
+    if (!canLogin || loggingIn) {
+      return;
+    }
+
+    setLoginError('');
     setLoggingIn(true);
 
-    // TODO: Replace with real offline authentication
-    setTimeout(() => {
-      setLoggingIn(false);
+    try {
+      const enteredId =
+        responderId.trim().toUpperCase();
+
+      const enteredPin =
+        pin.trim();
+
+
+      /*
+       * Check credentials
+       */
+
+      const isValid =
+        enteredId ===
+          responderCredentials.responderId &&
+        enteredPin ===
+          responderCredentials.pin;
+
+
+      /*
+       * Invalid credentials
+       */
+
+      if (!isValid) {
+        setLoginError(
+          'Invalid Responder ID or Security PIN.'
+        );
+
+        return;
+      }
+
+
+      /*
+       * =========================
+       * SUCCESSFUL LOGIN
+       * =========================
+       */
+
+      if (rememberDevice) {
+
+        const responderSession = {
+          responderId:
+            responderCredentials.responderId,
+
+          authenticated: true,
+
+          loginTime:
+            new Date().toISOString(),
+        };
+
+
+        /*
+         * Save responder authentication
+         * locally using our storage helper.
+         */
+
+        await saveResponderSession(
+          responderSession
+        );
+
+
+        console.log(
+          'Responder session saved locally:',
+          responderSession
+        );
+
+      } else {
+
+        /*
+         * User does not want the device
+         * to remember the responder login.
+         *
+         * Remove any previous session.
+         */
+
+        await clearResponderSession();
+      }
+
+
+      /*
+       * Navigate to responder dashboard.
+       */
 
       navigation.replace('AssignedMeshes');
-    }, 700);
+
+    } catch (error) {
+
+      console.error(
+        'Responder authentication failed:',
+        error
+      );
+
+      setLoginError(
+        'Unable to complete authentication. Please try again.'
+      );
+
+    } finally {
+
+      setLoggingIn(false);
+    }
   };
+
 
   return (
     <SafeAreaView
       style={[
         styles.container,
-        { backgroundColor: colors.background },
+        {
+          backgroundColor:
+            colors.background,
+        },
       ]}
       edges={['top', 'bottom']}
     >
+
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
+        }
       >
+
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.content,
             {
-              paddingHorizontal: spacing.marginMobile,
-              paddingTop: spacing.xl,
-              paddingBottom: spacing.xl,
+              paddingHorizontal:
+                spacing.marginMobile,
+
+              paddingTop:
+                spacing.xl,
+
+              paddingBottom:
+                spacing.xl,
             },
           ]}
         >
+
+          {/* =========================
+              THEME BUTTON
+              ========================= */}
+
           <View style={styles.topActions}>
+
             <Pressable
               onPress={toggleScheme}
-              style={[styles.iconBtn, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+              style={[
+                styles.iconBtn,
+                {
+                  borderColor:
+                    colors.outlineVariant,
+
+                  backgroundColor:
+                    colors.surfaceContainerLowest,
+                },
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Toggle theme"
             >
-              <MaterialIcons name={isDark ? 'light-mode' : 'dark-mode'} size={22} color={colors.onSurface} />
+
+              <MaterialIcons
+                name={
+                  isDark
+                    ? 'light-mode'
+                    : 'dark-mode'
+                }
+                size={22}
+                color={colors.onSurface}
+              />
+
             </Pressable>
+
           </View>
 
+
+          {/* =========================
+              LOGO
+              ========================= */}
+
           <View style={styles.brand}>
+
             <View
               style={[
                 styles.logo,
                 {
-                  backgroundColor: colors.onSurface,
-                  borderRadius: radius.lg,
+                  backgroundColor:
+                    colors.onSurface,
+
+                  borderRadius:
+                    radius.lg,
                 },
               ]}
             >
+
               <MaterialIcons
                 name="hub"
                 size={30}
                 color={colors.background}
               />
+
             </View>
+
 
             <Text
               style={[
                 typography.headlineMd,
                 {
-                  color: colors.onSurface,
-                  marginTop: spacing.sm,
+                  color:
+                    colors.onSurface,
+
+                  marginTop:
+                    spacing.sm,
                 },
               ]}
             >
               MeshSync
             </Text>
+
           </View>
+
+
+          {/* =========================
+              HEADING
+              ========================= */}
 
           <View
             style={[
               styles.heading,
-              { marginTop: spacing.xl },
+              {
+                marginTop:
+                  spacing.xl,
+              },
             ]}
           >
+
             <Text
               style={[
                 typography.headlineLgMobile,
-                { color: colors.onSurface },
+                {
+                  color:
+                    colors.onSurface,
+                },
               ]}
             >
               Responder Login
             </Text>
 
+
             <Text
               style={[
                 typography.bodyMd,
                 {
-                  color: colors.onSurfaceVariant,
-                  marginTop: spacing.xs,
+                  color:
+                    colors.onSurfaceVariant,
+
+                  marginTop:
+                    spacing.xs,
+
+                  textAlign:
+                    'center',
                 },
               ]}
             >
-              Sign in to access your assigned emergency meshes.
+              Sign in to access your assigned
+              emergency meshes.
             </Text>
+
           </View>
+
+
+          {/* =========================
+              LOGIN CARD
+              ========================= */}
 
           <View
             style={[
               styles.card,
               {
-                backgroundColor: colors.surfaceContainerLowest,
-                borderColor: colors.outlineVariant,
-                borderRadius: radius.xl,
-                padding: spacing.md,
-                marginTop: spacing.lg,
+                backgroundColor:
+                  colors.surfaceContainerLowest,
+
+                borderColor:
+                  colors.outlineVariant,
+
+                borderRadius:
+                  radius.xl,
+
+                padding:
+                  spacing.md,
+
+                marginTop:
+                  spacing.lg,
               },
             ]}
           >
-            <View style={{ gap: spacing.xs }}>
+
+
+            {/* =========================
+                RESPONDER ID
+                ========================= */}
+
+            <View
+              style={{
+                gap: spacing.xs,
+              }}
+            >
+
               <Text
                 style={[
                   typography.labelMd,
-                  { color: colors.onSurfaceVariant },
+                  {
+                    color:
+                      colors.onSurfaceVariant,
+                  },
                 ]}
               >
                 RESPONDER ID
               </Text>
 
+
               <View
                 style={[
                   styles.inputWrapper,
                   {
-                    backgroundColor: colors.surfaceContainer,
-                    borderColor: colors.outline,
-                    borderRadius: radius.md,
+                    backgroundColor:
+                      colors.surfaceContainer,
+
+                    borderColor:
+                      loginError
+                        ? colors.error
+                        : colors.outline,
+
+                    borderRadius:
+                      radius.md,
                   },
                 ]}
               >
+
                 <MaterialIcons
                   name="badge"
                   size={20}
-                  color={colors.onSurfaceVariant}
+                  color={
+                    colors.onSurfaceVariant
+                  }
                 />
+
 
                 <TextInput
                   value={responderId}
-                  onChangeText={setResponderId}
+
+                  onChangeText={(text) => {
+                    setResponderId(text);
+                    setLoginError('');
+                  }}
+
                   placeholder="e.g. RSP-001"
+
                   placeholderTextColor={
-                    colors.onSurfaceVariant + '80'
+                    colors.onSurfaceVariant +
+                    '80'
                   }
+
                   autoCapitalize="characters"
+
                   autoCorrect={false}
+
+                  autoComplete="username"
+
                   style={[
                     styles.input,
-                    { color: colors.onSurface },
+                    {
+                      color:
+                        colors.onSurface,
+                    },
                   ]}
                 />
+
               </View>
+
             </View>
+
+
+            {/* =========================
+                SECURITY PIN
+                ========================= */}
 
             <View
               style={[
                 styles.field,
-                { marginTop: spacing.md },
+                {
+                  marginTop:
+                    spacing.md,
+                },
               ]}
             >
+
               <Text
                 style={[
                   typography.labelMd,
-                  { color: colors.onSurfaceVariant },
+                  {
+                    color:
+                      colors.onSurfaceVariant,
+                  },
                 ]}
               >
                 SECURITY PIN
               </Text>
 
+
               <View
                 style={[
                   styles.inputWrapper,
                   {
-                    backgroundColor: colors.surfaceContainer,
-                    borderColor: colors.outline,
-                    borderRadius: radius.md,
+                    backgroundColor:
+                      colors.surfaceContainer,
+
+                    borderColor:
+                      loginError
+                        ? colors.error
+                        : colors.outline,
+
+                    borderRadius:
+                      radius.md,
                   },
                 ]}
               >
+
                 <MaterialIcons
                   name="lock"
                   size={20}
-                  color={colors.onSurfaceVariant}
+                  color={
+                    colors.onSurfaceVariant
+                  }
                 />
+
 
                 <TextInput
                   value={pin}
-                  onChangeText={setPin}
+
+                  onChangeText={(text) => {
+
+                    /*
+                     * Allow numbers only.
+                     */
+
+                    const numericValue =
+                      text.replace(
+                        /[^0-9]/g,
+                        ''
+                      );
+
+                    setPin(numericValue);
+                    setLoginError('');
+                  }}
+
                   placeholder="Enter your PIN"
+
                   placeholderTextColor={
-                    colors.onSurfaceVariant + '80'
+                    colors.onSurfaceVariant +
+                    '80'
                   }
+
                   keyboardType="number-pad"
-                  secureTextEntry={!showPin}
+
+                  secureTextEntry={
+                    !showPin
+                  }
+
                   maxLength={6}
+
+                  autoComplete="password"
+
                   style={[
                     styles.input,
-                    { color: colors.onSurface },
+                    {
+                      color:
+                        colors.onSurface,
+                    },
                   ]}
                 />
 
+
+                {/* Show / Hide PIN */}
+
                 <Pressable
-                  onPress={() => setShowPin((current) => !current)}
+                  onPress={() =>
+                    setShowPin(
+                      (current) =>
+                        !current
+                    )
+                  }
+
                   hitSlop={8}
-                  style={styles.visibilityButton}
+
+                  style={
+                    styles.visibilityButton
+                  }
+
+                  accessibilityRole="button"
+
+                  accessibilityLabel={
+                    showPin
+                      ? 'Hide PIN'
+                      : 'Show PIN'
+                  }
                 >
+
                   <MaterialIcons
                     name={
                       showPin
                         ? 'visibility-off'
                         : 'visibility'
                     }
+
                     size={20}
-                    color={colors.onSurfaceVariant}
+
+                    color={
+                      colors.onSurfaceVariant
+                    }
                   />
+
                 </Pressable>
+
               </View>
+
             </View>
+
+
+            {/* =========================
+                ERROR MESSAGE
+                ========================= */}
+
+            {loginError ? (
+
+              <View
+                style={[
+                  styles.errorContainer,
+                  {
+                    backgroundColor:
+                      colors.surfaceContainer,
+
+                    borderColor:
+                      colors.error,
+
+                    borderRadius:
+                      radius.md,
+
+                    marginTop:
+                      spacing.md,
+                  },
+                ]}
+              >
+
+                <MaterialIcons
+                  name="error-outline"
+                  size={20}
+                  color={colors.error}
+                />
+
+
+                <Text
+                  style={[
+                    typography.bodyMd,
+                    {
+                      color:
+                        colors.error,
+
+                      flex: 1,
+                    },
+                  ]}
+                >
+                  {loginError}
+                </Text>
+
+              </View>
+
+            ) : null}
+
+
+            {/* =========================
+                REMEMBER DEVICE
+                ========================= */}
 
             <Pressable
               onPress={() =>
-                setRememberDevice((current) => !current)
+                setRememberDevice(
+                  (current) =>
+                    !current
+                )
               }
+
               style={[
                 styles.rememberRow,
-                { marginTop: spacing.md },
+                {
+                  marginTop:
+                    spacing.md,
+                },
               ]}
             >
+
               <View
                 style={[
                   styles.checkbox,
                   {
-                    backgroundColor: rememberDevice
-                      ? colors.onSurface
-                      : colors.surfaceContainer,
-                    borderColor: rememberDevice
-                      ? colors.onSurface
-                      : colors.outline,
+                    backgroundColor:
+                      rememberDevice
+                        ? colors.onSurface
+                        : colors.surfaceContainer,
+
+                    borderColor:
+                      rememberDevice
+                        ? colors.onSurface
+                        : colors.outline,
+
                     borderRadius: 4,
                   },
                 ]}
               >
+
                 {rememberDevice && (
+
                   <MaterialIcons
                     name="check"
                     size={15}
-                    color={colors.background}
+                    color={
+                      colors.background
+                    }
                   />
+
                 )}
+
               </View>
+
 
               <Text
                 style={[
                   typography.bodyMd,
-                  { color: colors.onSurface },
+                  {
+                    color:
+                      colors.onSurface,
+                  },
                 ]}
               >
                 Remember this device
               </Text>
+
             </Pressable>
+
+
+            {/* =========================
+                LOGIN BUTTON
+                ========================= */}
 
             <Pressable
               onPress={handleLogin}
-              disabled={!canLogin || loggingIn}
+
+              disabled={
+                !canLogin ||
+                loggingIn
+              }
+
               style={({ pressed }) => [
                 styles.loginButton,
+
                 {
-                  backgroundColor: canLogin
-                    ? colors.onSurface
-                    : colors.surfaceContainer,
-                  borderRadius: radius.md,
-                  marginTop: spacing.lg,
+                  backgroundColor:
+                    canLogin
+                      ? colors.onSurface
+                      : colors.surfaceContainer,
+
+                  borderRadius:
+                    radius.md,
+
+                  marginTop:
+                    spacing.lg,
+
                   opacity:
-                    pressed && canLogin
+                    pressed &&
+                    canLogin
                       ? 0.75
                       : 1,
                 },
               ]}
             >
+
               {loggingIn ? (
+
                 <Text
                   style={[
                     typography.titleLg,
                     {
-                      color: colors.background,
+                      color:
+                        colors.background,
                     },
                   ]}
                 >
                   Signing in...
                 </Text>
+
               ) : (
+
                 <>
+
                   <Text
                     style={[
                       typography.titleLg,
                       {
-                        color: canLogin
-                          ? colors.background
-                          : colors.onSurfaceVariant,
+                        color:
+                          canLogin
+                            ? colors.background
+                            : colors.onSurfaceVariant,
                       },
                     ]}
                   >
                     Login
                   </Text>
+
 
                   <MaterialIcons
                     name="arrow-forward"
@@ -344,83 +808,138 @@ export default function ResponderLoginScreen({ navigation }) {
                         : colors.onSurfaceVariant
                     }
                   />
+
                 </>
+
               )}
+
             </Pressable>
+
           </View>
+
+
+          {/* =========================
+              OFFLINE READY
+              ========================= */}
 
           <View
             style={[
               styles.offlineCard,
               {
-                backgroundColor: colors.surfaceContainer,
-                borderColor: colors.outlineVariant,
-                borderRadius: radius.lg,
-                marginTop: spacing.md,
+                backgroundColor:
+                  colors.surfaceContainer,
+
+                borderColor:
+                  colors.outlineVariant,
+
+                borderRadius:
+                  radius.lg,
+
+                marginTop:
+                  spacing.md,
               },
             ]}
           >
+
             <View
               style={[
                 styles.offlineIcon,
                 {
-                  backgroundColor: colors.onSurface,
+                  backgroundColor:
+                    colors.onSurface,
+
                   borderRadius: 20,
                 },
               ]}
             >
+
               <MaterialIcons
                 name="wifi-off"
                 size={18}
-                color={colors.background}
+                color={
+                  colors.background
+                }
               />
+
             </View>
 
-            <View style={styles.offlineText}>
+
+            <View
+              style={
+                styles.offlineText
+              }
+            >
+
               <Text
                 style={[
                   typography.labelLg,
-                  { color: colors.onSurface },
+                  {
+                    color:
+                      colors.onSurface,
+                  },
                 ]}
               >
                 OFFLINE READY
               </Text>
 
+
               <Text
                 style={[
                   typography.labelMd,
                   {
-                    color: colors.onSurfaceVariant,
+                    color:
+                      colors.onSurfaceVariant,
+
                     marginTop: 2,
                   },
                 ]}
               >
-                Authentication can work without internet.
+                Authentication can work
+                without internet.
               </Text>
+
             </View>
+
           </View>
+
+
+          {/* =========================
+              SECURITY MESSAGE
+              ========================= */}
 
           <Text
             style={[
               typography.labelMd,
               {
-                color: colors.onSurfaceVariant,
-                textAlign: 'center',
-                marginTop: spacing.lg,
-                paddingHorizontal: spacing.md,
+                color:
+                  colors.onSurfaceVariant,
+
+                textAlign:
+                  'center',
+
+                marginTop:
+                  spacing.lg,
+
+                paddingHorizontal:
+                  spacing.md,
               },
             ]}
           >
-            Your responder credentials are stored securely
-            on this device.
+            Your responder credentials are
+            stored securely on this device.
           </Text>
+
         </ScrollView>
+
       </KeyboardAvoidingView>
+
     </SafeAreaView>
   );
 }
 
+
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
   },
@@ -506,6 +1025,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  errorContainer: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 8,
+    borderWidth: 1,
+  },
+
   loginButton: {
     minHeight: 54,
     flexDirection: 'row',
@@ -534,4 +1062,5 @@ const styles = StyleSheet.create({
   offlineText: {
     flex: 1,
   },
+
 });

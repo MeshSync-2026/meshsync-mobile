@@ -118,3 +118,9 @@ export const radarPeers = [
   { id: 'p5', label: 'Peer 3', type: 'mesh', top: '55%', left: null, right: '30%' },
   { id: 'p6', label: 'Peer 4', type: 'mesh', top: null, bottom: '15%', left: '60%' },
 ];
+
+
+export const responderCredentials = {
+  responderId: 'RSP-001',
+  pin: '1234',
+};

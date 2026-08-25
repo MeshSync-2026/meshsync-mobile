@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "MeshSync",
+    "slug": "meshsync",
+    "version": "2.4.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#FAFAFA"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "org.meshsync.app"
+    },
+    "android": {
+      "package": "org.meshsync.app"
+    }
+  }
+}

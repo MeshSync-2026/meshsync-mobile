@@ -8,6 +8,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../theme/ThemeContext';
+import { getActiveRole, ROLE, initHotState } from '../backend/store/hotState';
 
 import OnboardingScreen from '../screens/OnboardingScreen';
 import BottomTabs from './BottomTabs';
@@ -27,22 +28,21 @@ export default function RootNavigator() {
   const [initialRoute, setInitialRoute] = useState(null);
 
   /*
-   * Check whether the user has already completed onboarding.
+   * Check whether the user has already completed onboarding and their active role.
    */
   useEffect(() => {
+    initHotState();
     const checkProfile = async () => {
       try {
         const storedProfile = await AsyncStorage.getItem(
           PROFILE_STORAGE_KEY
         );
 
-        if (storedProfile) {
-          // Profile exists → go directly to the app
-          setInitialRoute('Main');
-        } else {
-          // No profile → show onboarding
+        if (!storedProfile) {
           setInitialRoute('Onboarding');
+          return;
         }
+        setInitialRoute(getActiveRole() === ROLE.RESPONDER ? 'Responder' : 'Main');
       } catch (error) {
         console.error(
           'Failed to check saved profile:',

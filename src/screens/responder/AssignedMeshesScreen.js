@@ -11,6 +11,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
 import { profile } from '../../data/mockData';
+import { setActiveRole, ROLE, deregisterResponder } from '../../backend/store/hotState';
 
 const MOCK_MESHES = [
   {
@@ -422,11 +423,8 @@ export default function AssignedMeshesScreen({ navigation }) {
               </Text>
               <Pressable
                 onPress={() => {
+                  setActiveRole(ROLE.CIVILIAN);
                   setIsProfileVisible(false);
-                  navigation.reset({
-                    index: 0,
-                    routes: [{ name: 'ResponderLogin' }],
-                  });
                   navigation.getParent()?.navigate('Main');
                 }}
                 style={({ pressed }) => [
@@ -438,6 +436,26 @@ export default function AssignedMeshesScreen({ navigation }) {
               >
                 <MaterialIcons name="swap-horiz" size={20} color={colors.onPrimary} />
                 <Text style={[typography.labelLg, { color: colors.onPrimary }]}>Switch to Citizen Mode</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  deregisterResponder();
+                  setIsProfileVisible(false);
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'ResponderLogin' }],
+                  });
+                }}
+                style={({ pressed }) => [
+                  styles.switchRoleBtn,
+                  { backgroundColor: colors.error, borderRadius: radius.md, opacity: pressed ? 0.9 : 1, marginTop: 12 }
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Log out of Responder account"
+              >
+                <MaterialIcons name="logout" size={20} color={colors.onError} />
+                <Text style={[typography.labelLg, { color: colors.onError }]}>Log Out (End of Shift)</Text>
               </Pressable>
             </View>
 

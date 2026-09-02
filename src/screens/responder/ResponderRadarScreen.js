@@ -9,12 +9,23 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
+import { useMeshSync } from '../../context/MeshSyncContext';
+import { projectToRadar } from '../../backend/shared/radarGeo';
 
 const RADAR_SIZE = 280;
 
 export default function ResponderRadarScreen({ route, navigation }) {
   const { incident, mesh } = route.params;
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+  const { userLocation } = useMeshSync();
+
+  const targetLocation = incident.raw
+    ? { latitude: incident.raw.latitude, longitude: incident.raw.longitude }
+    : { latitude: incident.latitude ?? 6.9316, longitude: incident.longitude ?? 79.8612 };
+
+  const projection = React.useMemo(() => {
+    return projectToRadar(userLocation, targetLocation, 2500, RADAR_SIZE);
+  }, [userLocation, targetLocation]);
 
   return (
     <SafeAreaView
@@ -235,8 +246,10 @@ export default function ResponderRadarScreen({ route, navigation }) {
               style={[
                 styles.incidentMarker,
                 {
-                  backgroundColor: colors.onSurface,
+                  backgroundColor: colors.error,
                   borderColor: colors.background,
+                  left: projection.x - 8,
+                  top: projection.y - 8,
                 },
               ]}
             />
@@ -244,10 +257,14 @@ export default function ResponderRadarScreen({ route, navigation }) {
             <Text
               style={[
                 styles.incidentLabel,
-                { color: colors.onSurface },
+                {
+                  color: colors.onSurface,
+                  left: Math.max(10, Math.min(projection.x - 30, RADAR_SIZE - 70)),
+                  top: projection.y + 10,
+                },
               ]}
             >
-              INCIDENT
+              INCIDENT ({projection.formattedDistance})
             </Text>
           </View>
 
@@ -348,7 +365,7 @@ export default function ResponderRadarScreen({ route, navigation }) {
                   { color: colors.onSurface },
                 ]}
               >
-                North-East
+                {projection.cardinal}
               </Text>
             </View>
 
@@ -368,7 +385,7 @@ export default function ResponderRadarScreen({ route, navigation }) {
                   { color: colors.onSurface },
                 ]}
               >
-                ~850 m
+                {projection.formattedDistance}
               </Text>
             </View>
           </View>

@@ -15,6 +15,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../theme/ThemeContext';
+import { useMeshSync } from '../context/MeshSyncContext';
+import { ROLE } from '../backend/store/hotState';
 import TopAppBar from '../components/TopAppBar';
 import { profile as mockProfile } from '../data/mockData';
 
@@ -30,6 +32,7 @@ export default function ProfileScreen({ navigation }) {
     toggleScheme,
   } = useTheme();
 
+  const { nodeId, isRegistered, activeRole, myEvents } = useMeshSync();
   const [profile, setProfile] = useState(null);
   const [relayAuto, setRelayAuto] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
@@ -279,7 +282,9 @@ export default function ProfileScreen({ navigation }) {
                   },
                 ]}
               >
-                Sign in to access assigned meshes and offline maps.
+                {isRegistered
+                  ? 'Active responder session. Access assigned disaster zones and incident navigation.'
+                  : 'Sign in to access assigned meshes and offline maps.'}
               </Text>
             </View>
           </View>
@@ -301,7 +306,7 @@ export default function ProfileScreen({ navigation }) {
                 { color: colors.onPrimary },
               ]}
             >
-              Authenticate as Responder
+              {isRegistered ? 'Open Responder Dashboard' : 'Authenticate as Responder'}
             </Text>
 
             <MaterialIcons
@@ -325,6 +330,13 @@ export default function ProfileScreen({ navigation }) {
             },
           ]}
         >
+          <Row
+            label="Mesh Node ID"
+            value={nodeId || 'Initializing...'}
+            icon="hub"
+            border
+          />
+
           <Row
             label="Full Name"
             value={displayName}

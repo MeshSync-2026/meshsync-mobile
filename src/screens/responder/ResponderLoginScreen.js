@@ -15,6 +15,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../theme/ThemeContext';
+import { useMeshSync } from '../../context/MeshSyncContext';
 import { responderCredentials } from '../../data/mockData';
 
 import {
@@ -34,6 +35,8 @@ export default function ResponderLoginScreen({
     isDark,
     toggleScheme,
   } = useTheme();
+
+  const { loginResponder } = useMeshSync();
 
   const [responderId, setResponderId] = useState('');
   const [pin, setPin] = useState('');
@@ -85,27 +88,16 @@ export default function ResponderLoginScreen({
       const enteredPin =
         pin.trim();
 
+      const result = await loginResponder({
+        username: enteredId,
+        password: enteredPin,
+        fallbackCredentials: responderCredentials,
+      });
 
-      /*
-       * Check credentials
-       */
-
-      const isValid =
-        enteredId ===
-          responderCredentials.responderId &&
-        enteredPin ===
-          responderCredentials.pin;
-
-
-      /*
-       * Invalid credentials
-       */
-
-      if (!isValid) {
+      if (!result.success) {
         setLoginError(
-          'Invalid Responder ID or Security PIN.'
+          result.error || 'Invalid Responder ID or Security PIN.'
         );
-
         return;
       }
 
@@ -119,8 +111,7 @@ export default function ResponderLoginScreen({
       if (rememberDevice) {
 
         const responderSession = {
-          responderId:
-            responderCredentials.responderId,
+          responderId: enteredId,
 
           authenticated: true,
 
@@ -171,7 +162,7 @@ export default function ResponderLoginScreen({
       );
 
       setLoginError(
-        'Unable to complete authentication. Please try again.'
+        'Authentication error. Please try again.'
       );
 
     } finally {

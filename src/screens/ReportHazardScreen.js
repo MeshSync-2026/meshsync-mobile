@@ -4,29 +4,67 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
+import { useMeshSync } from '../context/MeshSyncContext';
+import { HAZARD_CATEGORY, SEVERITY } from '../backend/shared/enums';
 import TopAppBar from '../components/TopAppBar';
 import PrimaryButton from '../components/PrimaryButton';
 import { hazardCategories } from '../data/mockData';
 
 const SEVERITIES = ['Low', 'Medium', 'High'];
 
+const CATEGORY_MAP = {
+  flood: HAZARD_CATEGORY.FLOOD,
+  landslide: HAZARD_CATEGORY.LANDSLIDE,
+  storm: HAZARD_CATEGORY.STORM,
+  fire: HAZARD_CATEGORY.FIRE,
+  medical: HAZARD_CATEGORY.MEDICAL,
+  damage: HAZARD_CATEGORY.STRUCTURAL,
+  road: HAZARD_CATEGORY.STRUCTURAL,
+  other: HAZARD_CATEGORY.NONE,
+};
+
+const SEVERITY_MAP = {
+  Low: SEVERITY.LOW,
+  Medium: SEVERITY.MEDIUM,
+  High: SEVERITY.HIGH,
+};
+
 export default function ReportHazardScreen() {
   const navigation = useNavigation();
   const { colors, spacing, radius, typography } = useTheme();
+  const { reportHazard, isOnline } = useMeshSync();
 
   const [category, setCategory] = useState(null);
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
   const [severity, setSeverity] = useState('Medium');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!category) {
       Alert.alert('Select a category', 'Please choose a hazard category before sending.');
       return;
     }
-    Alert.alert('Report queued', 'Your report will sync as soon as a mesh peer is in range.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
+    setIsSubmitting(true);
+    try {
+      const categoryCode = CATEGORY_MAP[category] ?? HAZARD_CATEGORY.NONE;
+      const severityLevel = SEVERITY_MAP[severity] ?? SEVERITY.MEDIUM;
+
+      const result = await reportHazard({
+        categoryCode,
+        title: title.trim() || undefined,
+        details: details.trim() || undefined,
+        severityLevel,
+      });
+
+      if (result.success) {
+        Alert.alert('Report Broadcasted', 'Your hazard report has been added to the mesh network.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

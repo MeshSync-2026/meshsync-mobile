@@ -9,6 +9,8 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
+import { useMeshSync } from '../../context/MeshSyncContext';
+import { SQUAD_ROLE } from '../../backend/shared/enums';
 
 const STATUSES = [
   {
@@ -37,19 +39,37 @@ export default function UpdateIncidentStatusScreen({
 }) {
   const { incident, mesh } = route.params;
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+  const { dispatchResponder, resolveIncident } = useMeshSync();
 
   const [selectedStatus, setSelectedStatus] = useState(
     incident.status || 'active'
   );
+  const [isSaving, setIsSaving] = useState(false);
 
-  const saveStatus = () => {
-    navigation.navigate('IncidentDetails', {
-      incident: {
-        ...incident,
-        status: selectedStatus,
-      },
-      mesh,
-    });
+  const saveStatus = async () => {
+    setIsSaving(true);
+    try {
+      if (selectedStatus === 'responding') {
+        await dispatchResponder({
+          incidentId: incident.id,
+          squadRoleCode: SQUAD_ROLE.RESCUER,
+        });
+      } else if (selectedStatus === 'resolved') {
+        await resolveIncident(incident.id);
+      }
+
+      navigation.navigate('IncidentDetails', {
+        incident: {
+          ...incident,
+          status: selectedStatus,
+        },
+        mesh,
+      });
+    } catch (e) {
+      console.error('[UpdateStatus] Failed to dispatch event:', e);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

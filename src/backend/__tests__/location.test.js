@@ -59,7 +59,7 @@ describe("Location Utility (location.js)", () => {
     expect(granted).toBe(false);
     expect(mockAlert).toHaveBeenCalledWith(
       "Location Permission Required",
-      "MeshSync requires location permission. Please enable location access in your device settings."
+      "Requires location permission. Please enable location access in your device settings."
     );
   });
 
@@ -83,7 +83,7 @@ describe("Location Utility (location.js)", () => {
     expect(loc).toBeNull();
     expect(mockAlert).toHaveBeenCalledWith(
       "Location Permission Required",
-      "MeshSync requires location permission. Please enable location access in your device settings."
+      "Requires location permission. Please enable location access in your device settings."
     );
   });
 

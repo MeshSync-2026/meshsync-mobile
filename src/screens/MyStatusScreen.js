@@ -4,25 +4,61 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
+import { useMeshSync } from '../context/MeshSyncContext';
+import { SAFETY, WATER, INJURY } from '../backend/shared/enums';
 import TopAppBar from '../components/TopAppBar';
 import PrimaryButton from '../components/PrimaryButton';
 import SegmentedGroup from '../components/SegmentedGroup';
 import Stepper from '../components/Stepper';
 
+const SAFETY_MAP = {
+  Safe: SAFETY.SAFE,
+  'Need Help': SAFETY.NEED_HELP,
+  Trapped: SAFETY.TRAPPED,
+};
+
+const WATER_MAP = {
+  Enough: WATER.GOOD,
+  Low: WATER.LOW,
+  None: WATER.NONE,
+};
+
+const MEDICAL_MAP = {
+  Uninjured: INJURY.NONE,
+  Minor: INJURY.MINOR,
+  Serious: INJURY.SEVERE,
+};
+
 export default function MyStatusScreen() {
   const navigation = useNavigation();
   const { colors, spacing, radius, typography } = useTheme();
+  const { updateMyStatus } = useMeshSync();
 
   const [safety, setSafety] = useState('Safe');
   const [water, setWater] = useState('Enough');
   const [food, setFood] = useState('Enough');
   const [medical, setMedical] = useState('Uninjured');
   const [people, setPeople] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const send = () => {
-    Alert.alert('Status sent', 'Your update will be transmitted to the nearest mesh node automatically.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
+  const send = async () => {
+    setIsSubmitting(true);
+    try {
+      const result = await updateMyStatus({
+        safetyCode: SAFETY_MAP[safety] ?? SAFETY.SAFE,
+        waterCode: WATER_MAP[water] ?? WATER.GOOD,
+        injuryCode: MEDICAL_MAP[medical] ?? INJURY.NONE,
+        peopleCount: people,
+      });
+
+      if (result.success) {
+        Alert.alert('Status sent', 'Your update will be transmitted to the nearest mesh node automatically.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,84 +9,43 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
-
-const MOCK_INCIDENTS = {
-  'MS-001': [
-    {
-      id: 'SOS-001',
-      type: 'SOS',
-      title: 'Person needs assistance',
-      location: 'Batticaloa Central',
-      time: '2 min ago',
-    },
-    {
-      id: 'SOS-002',
-      type: 'SOS',
-      title: 'Family stranded',
-      location: 'Batticaloa Central',
-      time: '8 min ago',
-    },
-    {
-      id: 'HZ-001',
-      type: 'HAZARD',
-      title: 'Flooded road',
-      location: 'Batticaloa Central',
-      time: '12 min ago',
-    },
-    {
-      id: 'HZ-002',
-      type: 'HAZARD',
-      title: 'Damaged bridge',
-      location: 'Batticaloa Central',
-      time: '20 min ago',
-    },
-  ],
-
-  'MS-002': [
-    {
-      id: 'SOS-003',
-      type: 'SOS',
-      title: 'Medical assistance required',
-      location: 'Batticaloa South',
-      time: '5 min ago',
-    },
-    {
-      id: 'HZ-003',
-      type: 'HAZARD',
-      title: 'Blocked road',
-      location: 'Batticaloa South',
-      time: '15 min ago',
-    },
-    {
-      id: 'HZ-004',
-      type: 'HAZARD',
-      title: 'Flooded area',
-      location: 'Batticaloa South',
-      time: '25 min ago',
-    },
-    {
-      id: 'HZ-005',
-      type: 'HAZARD',
-      title: 'Power line down',
-      location: 'Batticaloa South',
-      time: '31 min ago',
-    },
-    {
-      id: 'HZ-006',
-      type: 'HAZARD',
-      title: 'Road obstruction',
-      location: 'Batticaloa South',
-      time: '40 min ago',
-    },
-  ],
-};
+import { useMeshSync } from '../../context/MeshSyncContext';
+import { REPORT_TYPE, SEVERITY, STATUS } from '../../backend/shared/enums';
+import { calculateDistance, formatDistance } from '../../backend/shared/radarGeo';
 
 export default function IncidentListScreen({ route, navigation }) {
-  const { mesh } = route.params;
-
+  const { mesh } = route.params || { mesh: { id: 'MS-001', name: 'Batticaloa Central' } };
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+  const { incidents: liveIncidents, userLocation } = useMeshSync();
 
-  const incidents = MOCK_INCIDENTS[mesh.id] || [];
+  const formattedIncidents = useMemo(() => {
+    return (liveIncidents || [])
+      .filter((inc) => inc.status !== STATUS.RESOLVED)
+      .map((inc) => {
+        const isSos =
+          inc.report_type_code === REPORT_TYPE.SOS ||
+          inc.event_type_code === 1 ||
+          inc.severity_level === SEVERITY.HIGH;
+
+        const distanceText =
+          userLocation && inc.latitude && inc.longitude
+            ? formatDistance(calculateDistance(userLocation.latitude, userLocation.longitude, inc.latitude, inc.longitude))
+            : inc.landmark_name || inc.location || 'Local Sector';
+
+        const createdAt = inc.createdAt || inc.created_at || Date.now();
+        const diffMins = Math.max(1, Math.round((Date.now() - createdAt) / 60000));
+        const timeText = diffMins < 60 ? `${diffMins} min ago` : `${Math.round(diffMins / 60)}h ago`;
+
+        return {
+          id: inc.id,
+          type: isSos ? 'SOS' : 'HAZARD',
+          title: inc.title || (isSos ? 'Emergency Assistance Needed' : 'Reported Hazard'),
+          location: distanceText,
+          time: timeText,
+          raw: inc,
+        };
+      });
+  }, [liveIncidents, userLocation]);
 
   return (
     <SafeAreaView
@@ -170,95 +129,104 @@ export default function IncidentListScreen({ route, navigation }) {
               { color: colors.onSurfaceVariant },
             ]}
           >
-            {incidents.length} active incidents in this mesh.
+            {formattedIncidents.length} active incidents in this mesh.
           </Text>
         </View>
 
-        {incidents.map((incident) => (
-          <Pressable
-            key={incident.id}
-            onPress={() => {
-  navigation.navigate('IncidentDetails', {
-    incident,
-    mesh,
-  });
-}}
-            style={({ pressed }) => [
-              styles.incidentCard,
-              {
-                backgroundColor: colors.surfaceContainerLowest,
-                borderColor: colors.outlineVariant,
-                borderRadius: radius.xl,
-                padding: spacing.md,
-                opacity: pressed ? 0.75 : 1,
-              },
-            ]}
-          >
-            <View style={styles.incidentHeader}>
-              <View
-                style={[
-                  styles.typeBadge,
-                  {
-                    backgroundColor: colors.surfaceContainer,
-                    borderColor: colors.outlineVariant,
-                  },
-                ]}
-              >
+        {formattedIncidents.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.xl }]}>
+            <MaterialIcons name="check-circle" size={32} color={colors.primary} style={{ alignSelf: 'center', marginBottom: 8 }} />
+            <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, textAlign: 'center' }]}>
+              No active incidents assigned to this mesh sector.
+            </Text>
+          </View>
+        ) : (
+          formattedIncidents.map((incident) => (
+            <Pressable
+              key={incident.id}
+              onPress={() => {
+                navigation.navigate('IncidentDetails', {
+                  incident,
+                  mesh,
+                });
+              }}
+              style={({ pressed }) => [
+                styles.incidentCard,
+                {
+                  backgroundColor: colors.surfaceContainerLowest,
+                  borderColor: incident.type === 'SOS' ? colors.error : colors.outlineVariant,
+                  borderRadius: radius.xl,
+                  padding: spacing.md,
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              <View style={styles.incidentHeader}>
+                <View
+                  style={[
+                    styles.typeBadge,
+                    {
+                      backgroundColor: incident.type === 'SOS' ? colors.error : colors.surfaceContainer,
+                      borderColor: incident.type === 'SOS' ? colors.error : colors.outlineVariant,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typography.labelMd,
+                      { color: incident.type === 'SOS' ? colors.onPrimary : colors.onSurface },
+                    ]}
+                  >
+                    {incident.type}
+                  </Text>
+                </View>
+
                 <Text
                   style={[
                     typography.labelMd,
-                    { color: colors.onSurface },
+                    { color: colors.onSurfaceVariant },
                   ]}
                 >
-                  {incident.type}
+                  {incident.time}
                 </Text>
               </View>
 
               <Text
                 style={[
-                  typography.labelMd,
-                  { color: colors.onSurfaceVariant },
+                  typography.titleLg,
+                  {
+                    color: colors.onSurface,
+                    marginTop: spacing.sm,
+                  },
                 ]}
               >
-                {incident.time}
+                {incident.title}
               </Text>
-            </View>
 
-            <Text
-              style={[
-                typography.titleLg,
-                {
-                  color: colors.onSurface,
-                  marginTop: spacing.sm,
-                },
-              ]}
-            >
-              {incident.title}
-            </Text>
-
-            <View
-              style={[
-                styles.locationRow,
-                { marginTop: spacing.sm },
-              ]}
-            >
-              <MaterialIcons
-                name="location-on"
-                size={18}
-                color={colors.onSurfaceVariant}
-              />
-
-              <Text
+              <View
                 style={[
-                  typography.bodyMd,
-                  { color: colors.onSurfaceVariant },
+                  styles.locationRow,
+                  { marginTop: spacing.sm },
                 ]}
               >
-                {incident.location}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
+                <MaterialIcons
+                  name="location-on"
+                  size={18}
+                  color={colors.onSurfaceVariant}
+                />
+
+                <Text
+                  style={[
+                    typography.bodyMd,
+                    { color: colors.onSurfaceVariant },
+                  ]}
+                >
+                  {incident.location}
+                </Text>
+              </View>
+            </Pressable>
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -268,7 +236,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-
   header: {
     minHeight: 72,
     flexDirection: 'row',
@@ -276,14 +243,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     gap: 12,
   },
-
   backButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   iconBtn: {
     width: 40,
     height: 40,
@@ -292,27 +257,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   incidentCard: {
     borderWidth: 1,
   },
-
   incidentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-
   typeBadge: {
     borderWidth: 1,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  emptyCard: {
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -10,29 +10,42 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
+import { useMeshSync } from '../../context/MeshSyncContext';
+import { REPORT_TYPE, SEVERITY, STATUS } from '../../backend/shared/enums';
 import { profile } from '../../data/mockData';
-import { setActiveRole, ROLE, deregisterResponder } from '../../backend/store/hotState';
-
-const MOCK_MESHES = [
-  {
-    id: 'MS-001',
-    name: 'Batticaloa Central',
-    sos: 3,
-    hazards: 2,
-  },
-  {
-    id: 'MS-002',
-    name: 'Batticaloa South',
-    sos: 1,
-    hazards: 4,
-  },
-];
 
 export default function AssignedMeshesScreen({ navigation }) {
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+  const { incidents, logoutResponder, assignedZoneId, peerCount } = useMeshSync();
 
   const [isOnDuty, setIsOnDuty] = useState(true);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
+
+  // Compute live counts
+  const activeSosCount = (incidents || []).filter(
+    (i) =>
+      (i.status !== STATUS.RESOLVED) &&
+      (i.report_type_code === REPORT_TYPE.SOS || i.event_type_code === 1 || i.severity_level === SEVERITY.HIGH)
+  ).length;
+
+  const activeHazardCount = (incidents || []).filter(
+    (i) => (i.status !== STATUS.RESOLVED) && (i.report_type_code === REPORT_TYPE.HAZARD)
+  ).length;
+
+  const meshes = [
+    {
+      id: assignedZoneId || 'MS-001',
+      name: 'Batticaloa Central',
+      sos: activeSosCount,
+      hazards: activeHazardCount,
+    },
+    {
+      id: 'MS-002',
+      name: 'Batticaloa South',
+      sos: 0,
+      hazards: 0,
+    },
+  ];
 
   return (
     <SafeAreaView
@@ -220,7 +233,7 @@ export default function AssignedMeshesScreen({ navigation }) {
           </View>
         )}
 
-        {MOCK_MESHES.map((mesh) => (
+        {meshes.map((mesh) => (
           <Pressable
             key={mesh.id}
             disabled={!isOnDuty}

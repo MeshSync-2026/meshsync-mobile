@@ -70,7 +70,7 @@ export function initHotState() {
 export const getNodeId = () => storage.getString("node_id");
 export const nextSeq = () => { const s = (storage.getNumber("seq") || 0) + 1; storage.set("seq", s); return s; };
 
-// --- Responder registration state (SRS §3.1.11 / §3.10.1) ---
+// Responder registration state
 export const isRegistered = () => storage.getBoolean("is_registered") ?? false;
 export const getAssignedZoneId = () => storage.getString("assigned_zone_id") || null;
 
@@ -83,8 +83,7 @@ export function registerAsResponder({ authority_user_id, assigned_zone_id, token
 }
 
 export function deregisterResponder() {
-  // Full logout — SRS doesn't describe this explicitly, but a responder
-  // handing back a device (end of shift) needs a real logout, distinct
+  // responder needs a logout, distinct
   // from just switching which role is currently active.
   storage.set("is_registered", false);
   storage.delete("assigned_zone_id");
@@ -93,7 +92,7 @@ export function deregisterResponder() {
   storage.set("active_role", ROLE.CIVILIAN);
 }
 
-// --- Active role (what's currently on screen — persists across restarts) ---
+//Active role (what's currently on screen - persists across restarts)
 export const getActiveRole = () => storage.getString("active_role") || ROLE.CIVILIAN;
 export function setActiveRole(role) {
   if (role === ROLE.RESPONDER && !isRegistered()) return; // can't switch into a role you're not registered for

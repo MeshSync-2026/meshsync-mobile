@@ -15,6 +15,16 @@
     },
     "android": {
       "package": "org.meshsync.app"
-    }
+    },
+    "plugins": [
+      [
+        "@config-plugins/react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Allow MeshSync to discover and sync with nearby emergency responders."
+        }
+      ]
+    ]
   }
 }

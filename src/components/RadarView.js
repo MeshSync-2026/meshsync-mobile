@@ -1,12 +1,24 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
-import { radarPeers } from '../data/mockData';
+import { useMeshSync } from '../context/MeshSyncContext';
+import { buildRadarBlips } from '../backend/shared/radarGeo';
 
 const SIZE = 260;
 
 export default function RadarView() {
   const { colors, typography } = useTheme();
+  const { incidents, userLocation } = useMeshSync();
+
+  const blips = useMemo(() => {
+    if (!userLocation || !incidents || incidents.length === 0) {
+      return [];
+    }
+    return buildRadarBlips(userLocation, incidents, {
+      maxRangeMeters: 3000,
+      radarSize: SIZE,
+    });
+  }, [userLocation, incidents]);
 
   const dotColor = (type) => {
     if (type === 'urgent') return colors.error;
@@ -39,36 +51,34 @@ export default function RadarView() {
         <View style={[styles.youDot, { backgroundColor: colors.ink, borderColor: colors.white }]} />
         <Text style={[styles.youLabel, { color: colors.onSurfaceVariant }]}>You</Text>
 
-        {radarPeers.map((p) => (
+        {blips.map((b) => (
           <View
-            key={p.id}
+            key={b.id}
             style={[
               styles.peerDot,
               {
-                backgroundColor: dotColor(p.type),
+                backgroundColor: dotColor(b.type),
                 borderColor: colors.white,
-                top: p.top ?? undefined,
-                bottom: p.bottom ?? undefined,
-                left: p.left ?? undefined,
-                right: p.right ?? undefined,
+                left: b.x - 5,
+                top: b.y - 5,
               },
             ]}
           >
             <Text
               style={[
                 styles.peerLabel,
-                { color: p.type === 'urgent' ? colors.error : colors.onSurfaceVariant },
+                { color: b.type === 'urgent' ? colors.error : colors.onSurfaceVariant },
               ]}
               numberOfLines={1}
             >
-              {p.label}
+              {b.label}
             </Text>
           </View>
         ))}
       </View>
 
       <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, fontStyle: 'italic', marginTop: 8 }]}>
-        Tap a dot for details
+        {blips.length > 0 ? `${blips.length} active emergency points in range` : 'Scanning local mesh...'}
       </Text>
 
       <View style={[styles.legend, { borderTopColor: colors.outlineVariant }]}>

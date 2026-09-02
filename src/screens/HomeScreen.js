@@ -4,11 +4,12 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
-import { meshStatus } from '../data/mockData';
+import { useMeshSync } from '../context/MeshSyncContext';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+  const { peerCount, isOnline, sendSOS } = useMeshSync();
   const scale = useRef(new Animated.Value(1)).current;
 
   const pressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
@@ -20,7 +21,19 @@ export default function HomeScreen() {
       'This will broadcast an emergency alert with your location to nearby mesh nodes.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Send SOS', style: 'destructive', onPress: () => Alert.alert('SOS Sent', 'Your alert is being relayed across the mesh network.') },
+        {
+          text: 'Send SOS',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await sendSOS();
+            if (result.success) {
+              Alert.alert(
+                'SOS Sent',
+                'Your emergency alert with GPS location is being relayed across the mesh network.'
+              );
+            }
+          },
+        },
       ],
     );
   };
@@ -31,8 +44,12 @@ export default function HomeScreen() {
         <View style={styles.headerLeft}>
           <MaterialIcons name="hub" size={18} color={colors.onSurface} />
           <View>
-            <Text style={[typography.labelLg, { color: colors.onSurface }]}>{meshStatus.peersNearby} peers nearby</Text>
-            <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>{meshStatus.lastSynced}</Text>
+            <Text style={[typography.labelLg, { color: colors.onSurface }]}>
+              {peerCount} {peerCount === 1 ? 'peer' : 'peers'} nearby
+            </Text>
+            <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+              {isOnline ? 'Online • Mesh Active' : 'Offline • Mesh Active'}
+            </Text>
           </View>
         </View>
         <View style={styles.headerActions}>

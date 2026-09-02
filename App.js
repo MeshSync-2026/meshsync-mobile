@@ -8,7 +8,8 @@ import {SafeAreaProvider } from 'react-native-safe-area-context';
 import {StatusBar} from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import {useFonts,AtkinsonHyperlegible_400Regular,AtkinsonHyperlegible_700Bold} from '@expo-google-fonts/atkinson-hyperlegible';
-import{ThemeProvider, useTheme } from './src/theme/ThemeContext';
+import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
+import { MeshSyncProvider } from './src/context/MeshSyncContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
 //keep the splash screen visible while fonts load
@@ -43,7 +44,9 @@ export default function App() {
     return (
         <SafeAreaProvider onLayout={onLayoutRootView}>
             <ThemeProvider>
-                <AppShell/>
+                <MeshSyncProvider>
+                    <AppShell/>
+                </MeshSyncProvider>
             </ThemeProvider>
         </SafeAreaProvider>
     );

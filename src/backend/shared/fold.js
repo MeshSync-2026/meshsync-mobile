@@ -175,9 +175,34 @@ export function lwwFold(sortedEvents) {
       }
 
       case EVENT_TYPE.STATUS_UPDATE: {
-        // Update incident fields via LWW
-        const inc = incidents.get(incId);
-        if (inc) {
+        let inc = incidents.get(incId);
+        if (!inc) {
+          inc = {
+            id: incId,
+            creator_node_id: evt.origin_node_id,
+            latitude: evt.latitude,
+            longitude: evt.longitude,
+            landmark_name: evt.landmark_name || null,
+            report_type_code: evt.report_type_code || REPORT_TYPE.HAZARD,
+            category_code: evt.category_code || null,
+            severity_level: evt.severity_level ?? SEVERITY.MEDIUM,
+            status_safety: evt.status_safety,
+            people_count: evt.people_count,
+            status_water: evt.status_water,
+            status_injury: evt.status_injury,
+            status_code: STATUS.OPEN,
+            confidence_code: CONFIDENCE.LIVE,
+            last_heartbeat_at: evt.created_at,
+            last_alive_hlc: evt.hlc_timestamp,
+            last_event_hlc: evt.hlc_timestamp,
+            created_at: evt.created_at,
+            updated_at: evt.created_at,
+          };
+          incidents.set(incId, inc);
+        } else {
+          // Update incident fields via LWW
+          if (evt.report_type_code != null) inc.report_type_code = evt.report_type_code;
+          if (evt.category_code != null) inc.category_code = evt.category_code;
           if (evt.severity_level != null) inc.severity_level = evt.severity_level;
           if (evt.status_safety != null) inc.status_safety = evt.status_safety;
           if (evt.people_count != null) inc.people_count = evt.people_count;

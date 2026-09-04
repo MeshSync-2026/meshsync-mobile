@@ -9,7 +9,7 @@ import { useMeshSync } from '../context/MeshSyncContext';
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
-  const { peerCount, isOnline, sendSOS } = useMeshSync();
+  const { peerCount, isOnline, sendSOS, userProfile } = useMeshSync();
   const scale = useRef(new Animated.Value(1)).current;
 
   const pressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
@@ -17,19 +17,19 @@ export default function HomeScreen() {
 
   const triggerSOS = () => {
     Alert.alert(
-      'Send SOS?',
-      'This will broadcast an emergency alert with your location to nearby mesh nodes.',
+      'Send Emergency SOS?',
+      'This will broadcast an urgent emergency alert with your high-precision GPS coordinates across nearby mesh devices.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Send SOS',
+          text: 'Broadcast SOS',
           style: 'destructive',
           onPress: async () => {
             const result = await sendSOS();
             if (result.success) {
               Alert.alert(
-                'SOS Sent',
-                'Your emergency alert with GPS location is being relayed across the mesh network.'
+                'SOS Broadcasted',
+                'Your emergency alert is active and being relayed across all nearby mesh nodes.'
               );
             }
           },
@@ -72,14 +72,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
-
-      <TouchableOpacity style={[styles.banner, { backgroundColor: colors.surfaceContainerLow, borderBottomColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile }]}>
-        <View style={styles.headerLeft}>
-          <MaterialIcons name="home-work" size={20} color={colors.onSurfaceVariant} />
-          <Text style={[typography.labelLg, { color: colors.onSurface }]}>Away from home?</Text>
-        </View>
-        <MaterialIcons name="chevron-right" size={20} color={colors.onSurfaceVariant} />
-      </TouchableOpacity>
 
       <View style={[styles.main, { paddingHorizontal: spacing.marginMobile }]}>
         <View style={styles.sosWrap}>

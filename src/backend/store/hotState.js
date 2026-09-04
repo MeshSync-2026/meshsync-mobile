@@ -59,16 +59,30 @@ export const storage = new MMKVClass();
 export const ROLE = { CIVILIAN: "CIVILIAN", RESPONDER: "RESPONDER" };
 
 export function initHotState() {
-  if (!storage.contains("node_id")) {
-    storage.set("node_id", `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  const existingNodeId = storage.getString("node_id");
+  if (!existingNodeId) {
+    storage.set("node_id", `node-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`);
     storage.set("seq", 0);
     storage.set("is_registered", false);
     storage.set("active_role", ROLE.CIVILIAN);
   }
 }
 
-export const getNodeId = () => storage.getString("node_id");
+export const getNodeId = () => {
+  let id = storage.getString("node_id");
+  if (!id) {
+    initHotState();
+    id = storage.getString("node_id");
+  }
+  return id;
+};
+
 export const nextSeq = () => { const s = (storage.getNumber("seq") || 0) + 1; storage.set("seq", s); return s; };
+
+// Track active SOS incident on this device (to prevent duplicate incident creation)
+export const getActiveSosIncidentId = () => storage.getString("active_sos_incident_id") || null;
+export const setActiveSosIncidentId = (incId) => storage.set("active_sos_incident_id", incId);
+export const clearActiveSosIncidentId = () => storage.delete("active_sos_incident_id");
 
 // Responder registration state
 export const isRegistered = () => storage.getBoolean("is_registered") ?? false;

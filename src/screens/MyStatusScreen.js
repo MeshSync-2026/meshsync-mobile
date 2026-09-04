@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -32,13 +32,14 @@ const MEDICAL_MAP = {
 export default function MyStatusScreen() {
   const navigation = useNavigation();
   const { colors, spacing, radius, typography } = useTheme();
-  const { updateMyStatus } = useMeshSync();
+  const { updateMyStatus, userProfile } = useMeshSync();
 
   const [safety, setSafety] = useState('Safe');
   const [water, setWater] = useState('Enough');
   const [food, setFood] = useState('Enough');
   const [medical, setMedical] = useState('Uninjured');
   const [people, setPeople] = useState(1);
+  const [locationTag, setLocationTag] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const send = async () => {
@@ -49,6 +50,7 @@ export default function MyStatusScreen() {
         waterCode: WATER_MAP[water] ?? WATER.GOOD,
         injuryCode: MEDICAL_MAP[medical] ?? INJURY.NONE,
         peopleCount: people,
+        landmarkName: locationTag.trim() || undefined,
       });
 
       if (result.success) {
@@ -85,6 +87,25 @@ export default function MyStatusScreen() {
           <Stepper value={people} onChange={setPeople} />
         </View>
 
+        <View style={{ gap: spacing.xs }}>
+          <Text style={[typography.labelLg, { color: colors.onSurface }]}>Location / Landmark (Optional)</Text>
+          <TextInput
+            placeholder="e.g. Home, Room 102, 2nd Floor"
+            placeholderTextColor={colors.onSurfaceVariant + '80'}
+            value={locationTag}
+            onChangeText={setLocationTag}
+            style={[
+              styles.input,
+              {
+                borderColor: colors.outlineVariant,
+                backgroundColor: colors.surfaceContainerHigh,
+                borderRadius: radius.md,
+                color: colors.onSurface,
+              },
+            ]}
+          />
+        </View>
+
         <PrimaryButton label="Send Status" icon="play-arrow" onPress={send} style={{ backgroundColor: colors.surfaceContainerHighest }} buttonColor="#FFFFFF" textColor="#111827" iconColor="#111827" />
 
         <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, textAlign: 'center', paddingHorizontal: spacing.xl, lineHeight: 18 }]}>Updates will be transmitted to the nearest mesh node automatically.</Text>
@@ -96,4 +117,5 @@ export default function MyStatusScreen() {
 const styles = StyleSheet.create({
   hero: { overflow: 'hidden', height: 96, justifyContent: 'center' },
   peopleCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1 },
+  input: { borderWidth: 1, paddingHorizontal: 16, height: 48, fontSize: 16 },
 });

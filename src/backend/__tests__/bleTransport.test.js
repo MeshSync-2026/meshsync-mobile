@@ -77,7 +77,7 @@ jest.mock(
       on(event, cb) {
         this.callbacks[event] = cb;
         if (event === "ready") {
-          setTimeout(cb, 0);
+          cb();
         }
       }
       addService = mockPeripheralAddService;

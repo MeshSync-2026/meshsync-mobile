@@ -16,6 +16,7 @@ import { BleTransport } from "../backend/transport/bleTransport";
 import { WsTransport } from "../backend/transport/wsTransport";
 import { startCloudSync, syncNow as triggerCloudSync } from "../backend/cloudSync";
 import { loginOfficer } from "../backend/cloudApi";
+import { getProfile } from "../utils/storage";
 import {
   createSosEvent,
   createHazardEvent,
@@ -23,6 +24,7 @@ import {
   createResponderEnRouteEvent,
   createResolveEvent,
 } from "../backend/eventCreator";
+import { clearActiveSosIncidentId, getActiveSosIncidentId } from "../backend/store/hotState";
 import { getCurrentLocation, formatCoordinateLandmark } from "../utils/location";
 
 const MeshSyncContext = createContext(null);
@@ -32,6 +34,7 @@ export function MeshSyncProvider({ children }) {
   const [responders, setResponders] = useState([]);
   const [history, setHistory] = useState([]);
   const [myEvents, setMyEvents] = useState([]);
+  const [relayedCount, setRelayedCount] = useState(0);
   const [peerCount, setPeerCount] = useState(0);
   const [isOnline, setIsOnline] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
@@ -39,6 +42,7 @@ export function MeshSyncProvider({ children }) {
   const [registered, setRegisteredState] = useState(false);
   const [assignedZoneId, setAssignedZoneIdState] = useState(null);
   const [nodeId, setNodeIdState] = useState("");
+  const [userProfile, setUserProfile] = useState(null);
 
   const bleTransportRef = useRef(null);
   const wsTransportRef = useRef(null);
@@ -52,36 +56,48 @@ export function MeshSyncProvider({ children }) {
     setRegisteredState(isRegistered());
     setAssignedZoneIdState(getAssignedZoneId());
 
+    // Load user profile
+    getProfile().then((prof) => {
+      if (prof) setUserProfile(prof);
+    }).catch(() => {});
+
     const store = getStore();
 
-    // 1. Subscribe to store projection updates
-    const unsubscribeStore = store.subscribe((projection) => {
-      setIncidents(projection?.incidents || []);
-      setResponders(projection?.responders || []);
-      setHistory(projection?.history || []);
-      
-      // Update my local events
-      store.getAll().then((allEvents) => {
-        const mine = allEvents.filter((e) => e.origin_node_id === currentNodeId || e.originNodeId === currentNodeId);
+    const refreshEventCounts = async () => {
+      try {
+        const allEvents = await store.getAll();
+        const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === currentNodeId);
+        const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== currentNodeId);
         setMyEvents(mine);
-      }).catch((err) => {
-        console.error("[MeshSyncContext] Error fetching my events:", err);
-      });
-    });
+        setRelayedCount(relayed.length);
+      } catch (err) {
+        console.error("[MeshSyncContext] Error fetching events:", err);
+      }
+    };
 
-    // 2. Initial state hydration
+    // 1. Initial state hydration
     store.getProjection().then((initialProjection) => {
       if (initialProjection) {
         setIncidents(initialProjection.incidents || []);
         setResponders(initialProjection.responders || []);
         setHistory(initialProjection.history || []);
       }
+      refreshEventCounts();
     }).catch((err) => {
       console.error("[MeshSyncContext] Error loading initial projection:", err);
+      refreshEventCounts();
     });
 
-    // 3. Initialize BLE and WebSocket transports
-    const ble = new BleTransport();
+    // 2. Subscribe to store projection updates
+    const unsubscribeStore = store.subscribe((projection) => {
+      setIncidents(projection?.incidents || []);
+      setResponders(projection?.responders || []);
+      setHistory(projection?.history || []);
+      refreshEventCounts();
+    });
+
+    // 3. Initialize BLE and WebSocket transports with explicit Node ID
+    const ble = new BleTransport(currentNodeId, getActiveRole());
     const ws = new WsTransport();
     bleTransportRef.current = ble;
     wsTransportRef.current = ws;
@@ -151,7 +167,7 @@ export function MeshSyncProvider({ children }) {
   /**
    * Send Emergency SOS (Requires GPS Permission)
    */
-  const sendSOS = useCallback(async ({ landmarkName } = {}) => {
+  const sendSOS = useCallback(async ({ landmarkName, victimName } = {}) => {
     const loc = await getCurrentLocation({ showAlertOnDenied: true });
     if (!loc) {
       return { success: false, error: "Location permission required" };
@@ -159,18 +175,21 @@ export function MeshSyncProvider({ children }) {
     setUserLocation(loc);
 
     const store = getStore();
-    const landmark = landmarkName || formatCoordinateLandmark(loc.latitude, loc.longitude);
+    const resolvedVictim = victimName || userProfile?.fullName || userProfile?.name || "";
+    const landmark = landmarkName || (resolvedVictim ? `SOS: ${resolvedVictim}` : formatCoordinateLandmark(loc.latitude, loc.longitude));
+    
     const event = createSosEvent({
       latitude: loc.latitude,
       longitude: loc.longitude,
-      landmark_name: landmark,
+      landmarkName: landmark,
+      victimName: resolvedVictim,
     });
 
     await store.insert(event);
     await broadcastEvent(event);
 
     return { success: true, event };
-  }, [broadcastEvent]);
+  }, [userProfile, broadcastEvent]);
 
   /**
    * Report a Hazard (Requires GPS Permission)
@@ -183,7 +202,7 @@ export function MeshSyncProvider({ children }) {
     setUserLocation(loc);
 
     const store = getStore();
-    const landmark = landmarkName || formatCoordinateLandmark(loc.latitude, loc.longitude);
+    const landmark = landmarkName || title || formatCoordinateLandmark(loc.latitude, loc.longitude);
     const event = createHazardEvent({
       category_code: categoryCode,
       title: title || "",
@@ -245,12 +264,15 @@ export function MeshSyncProvider({ children }) {
    */
   const resolveIncident = useCallback(async (incidentId) => {
     const store = getStore();
-    const event = createResolveEvent({
-      incident_id: incidentId,
-    });
+    const event = createResolveEvent(incidentId);
 
     await store.insert(event);
     await broadcastEvent(event);
+
+    const localActiveSosId = getActiveSosIncidentId();
+    if (localActiveSosId && localActiveSosId === incidentId) {
+      clearActiveSosIncidentId();
+    }
 
     return { success: true, event };
   }, [broadcastEvent]);
@@ -315,12 +337,22 @@ export function MeshSyncProvider({ children }) {
     setActiveRoleState(getActiveRole());
   }, []);
 
+  // Deduplicated count of active emergencies by originating device
+  const activeEmergencyCount = (incidents || []).filter(
+    (i) => (i.report_type_code === 1 || i.reportTypeCode === 1) && (i.status_code === 1 || i.statusCode === 1)
+  ).reduce((acc, inc) => {
+    const creator = inc.creator_node_id || inc.creatorNodeId || inc.id;
+    acc.add(creator);
+    return acc;
+  }, new Set()).size;
+
   const value = {
     // Reactive State
     incidents,
     responders,
     history,
     myEvents,
+    relayedCount,
     peerCount,
     isOnline,
     userLocation,
@@ -328,6 +360,8 @@ export function MeshSyncProvider({ children }) {
     isRegistered: registered,
     assignedZoneId,
     nodeId,
+    userProfile,
+    activeEmergencyCount,
 
     // Actions
     refreshLocation,

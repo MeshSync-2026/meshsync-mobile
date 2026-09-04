@@ -31,12 +31,13 @@ const SEVERITY_MAP = {
 
 export default function ReportHazardScreen() {
   const navigation = useNavigation();
-  const { colors, spacing, radius, typography } = useTheme();
-  const { reportHazard, isOnline } = useMeshSync();
+  const { colors, spacing, radius, typography, isDark } = useTheme();
+  const { reportHazard, isOnline, userProfile } = useMeshSync();
 
   const [category, setCategory] = useState(null);
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
+  const [locationTag, setLocationTag] = useState('');
   const [severity, setSeverity] = useState('Medium');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -55,6 +56,7 @@ export default function ReportHazardScreen() {
         title: title.trim() || undefined,
         details: details.trim() || undefined,
         severityLevel,
+        landmarkName: locationTag.trim() || undefined,
       });
 
       if (result.success) {
@@ -73,8 +75,10 @@ export default function ReportHazardScreen() {
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.marginMobile, paddingTop: spacing.md, paddingBottom: 140 }}>
         <View style={[styles.offlineBanner, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.lg }]}>
-          <MaterialIcons name="cloud-off" size={18} color={colors.onSurface} />
-          <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>Offline - Mesh Active</Text>
+          <MaterialIcons name={isOnline ? "cloud-done" : "cloud-off"} size={18} color={colors.onSurface} />
+          <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>
+            {isOnline ? "Online • Mesh Active" : "Offline • Mesh Active"}
+          </Text>
         </View>
 
         <View style={{ marginBottom: spacing.xl }}>
@@ -92,15 +96,31 @@ export default function ReportHazardScreen() {
                   style={[
                     styles.categoryCard,
                     {
-                      backgroundColor: active ? colors.surfaceContainerHighest : colors.surfaceContainerHigh,
-                      borderColor: active ? colors.outlineVariant : colors.outlineVariant,
+                      backgroundColor: active
+                        ? (isDark ? '#1C2E3D' : '#E0F2FE')
+                        : colors.surfaceContainerHigh,
+                      borderColor: active ? colors.primary : colors.outlineVariant,
+                      borderWidth: active ? 2 : 1,
                       borderRadius: radius.xl,
                       padding: spacing.md,
+                      position: 'relative',
                     },
                   ]}
                 >
-                  <MaterialIcons name={cat.icon} size={28} color={colors.onSurface} style={{ marginBottom: 8 }} />
-                  <Text style={[typography.labelLg, { color: colors.onSurface }]}>{cat.label}</Text>
+                  {active && (
+                    <View style={styles.categoryCheckBadge}>
+                      <MaterialIcons name="check-circle" size={18} color={colors.primary} />
+                    </View>
+                  )}
+                  <MaterialIcons
+                    name={cat.icon}
+                    size={28}
+                    color={active ? colors.primary : colors.onSurface}
+                    style={{ marginBottom: 8 }}
+                  />
+                  <Text style={[typography.labelLg, { color: colors.onSurface, fontWeight: active ? '700' : '400' }]}>
+                    {cat.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -109,12 +129,31 @@ export default function ReportHazardScreen() {
 
         <View style={[styles.locationNote, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.xl }]}>
           <MaterialIcons name="my-location" size={20} color={colors.onSurface} />
-          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, flex: 1 }]}>Your high-precision location will be captured automatically via GPS/Mesh relay.</Text>
+          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, flex: 1 }]}>
+            Your high-precision location will be captured automatically via GPS/Mesh relay.
+          </Text>
         </View>
 
         <View style={{ gap: spacing.lg, marginBottom: spacing.xl }}>
-          <Field label="Short Title (Optional)" value={title} onChangeText={setTitle} placeholder="e.g. Broken power line near park" />
-          <Field label="Details (Optional)" value={details} onChangeText={setDetails} placeholder="Provide extra context for emergency responders..." multiline />
+          <Field
+            label="Location Name / Landmark (Optional)"
+            value={locationTag}
+            onChangeText={setLocationTag}
+            placeholder="e.g. Near River Bridge, Main Street Junction"
+          />
+          <Field
+            label="Short Title (Optional)"
+            value={title}
+            onChangeText={setTitle}
+            placeholder="e.g. Broken power line near park"
+          />
+          <Field
+            label="Details (Optional)"
+            value={details}
+            onChangeText={setDetails}
+            placeholder="Provide extra context for emergency responders..."
+            multiline
+          />
         </View>
 
         <View style={{ marginBottom: spacing.xl }}>
@@ -126,7 +165,7 @@ export default function ReportHazardScreen() {
                 <TouchableOpacity
                   key={level}
                   onPress={() => setSeverity(level)}
-                  style={[styles.severityBtn, { borderRadius: radius.md, backgroundColor: active ? colors.surfaceContainerLowest : 'transparent' }]}
+                  style={[styles.severityBtn, { borderRadius: radius.md, backgroundColor: active ? (isDark ? colors.surfaceContainerHighest : '#FFFFFF') : 'transparent' }]}
                 >
                   <Text style={[typography.labelLg, { color: colors.onSurface, fontWeight: active ? '700' : '400' }]}>{level}</Text>
                 </TouchableOpacity>
@@ -172,6 +211,7 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   categoryCard: { width: '48%', borderWidth: 1, marginBottom: 8 },
+  categoryCheckBadge: { position: 'absolute', top: 10, right: 10 },
   locationNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderWidth: 1, padding: 16 },
   severityTrack: { flexDirection: 'row', borderWidth: 1 },
   severityBtn: { flex: 1, paddingVertical: 8, alignItems: 'center' },

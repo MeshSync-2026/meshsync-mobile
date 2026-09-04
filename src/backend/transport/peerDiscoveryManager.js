@@ -140,7 +140,21 @@ export class PeerDiscoveryManager {
     this.localPayload = "[]";
     this.lastConnections = new Map(); // peerNodeId -> timestamp
     this.connectingPeers = new Set(); // peerNodeId
-    this.discoveredDevices = new Map(); // peerNodeId -> device
+    this.discoveredDevices = new Map(); // peerNodeId -> { device, lastSeen }
+  }
+
+  getPeerCount() {
+    const now = Date.now();
+    let activePeers = 0;
+    for (const [id, entry] of this.discoveredDevices.entries()) {
+      const lastSeen = (entry && entry.lastSeen) || 0;
+      if (now - lastSeen < 60000) {
+        activePeers++;
+      } else {
+        this.discoveredDevices.delete(id);
+      }
+    }
+    return activePeers;
   }
 
   updateLocalPayload(payloadString) {
@@ -191,10 +205,12 @@ export class PeerDiscoveryManager {
 
       if (!PeripheralModule) return;
 
-      PeripheralModule.setDeviceName(`MeshSync-${this.nodeId}`);
+      const advName = `MeshSync-${this.nodeId || "node"}`;
+      PeripheralModule.setDeviceName(advName);
       this.peripheral = new PeripheralModule();
 
       this.peripheral.on("ready", async () => {
+        if (!this.isScanning) return;
         try {
           await this.peripheral.addService(SERVICE_UUID, true);
 
@@ -214,11 +230,16 @@ export class PeerDiscoveryManager {
             Permission.WRITEABLE
           );
 
+          if (!this.isScanning) return;
           await this._syncLocalPayloadToGatt();
           await this.peripheral.startAdvertising();
-          console.log("[PeerDiscovery] BLE Peripheral advertising started successfully.");
+          if (this.isScanning) {
+            console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
+          }
         } catch (err) {
-          console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+          if (this.isScanning) {
+            console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+          }
         }
       });
 
@@ -246,19 +267,26 @@ export class PeerDiscoveryManager {
   async _startCentral() {
     try {
       this.bleManager.startDeviceScan(
-        [SERVICE_UUID],
-        { allowDuplicates: false },
+        null, // Scan all devices to inspect names and service UUIDs reliably on all Android chipsets
+        { allowDuplicates: true },
         async (error, device) => {
           if (error) {
             console.error("[PeerDiscovery] BLE Scan error:", error?.message || error);
             return;
           }
 
-          if (device && device.name && device.name.startsWith("MeshSync-")) {
-            const peerNodeId = device.name.substring("MeshSync-".length).trim();
+          const devName =
+            device?.name && device.name.startsWith("MeshSync-")
+              ? device.name
+              : device?.localName && device.localName.startsWith("MeshSync-")
+              ? device.localName
+              : null;
+
+          if (devName) {
+            const peerNodeId = devName.substring("MeshSync-".length).trim();
             if (!peerNodeId || peerNodeId === this.nodeId) return; // Skip self
 
-            this.discoveredDevices.set(peerNodeId, device);
+            this.discoveredDevices.set(peerNodeId, { device, lastSeen: Date.now() });
 
             const now = Date.now();
             const lastConnect = this.lastConnections.get(peerNodeId) || 0;
@@ -268,7 +296,13 @@ export class PeerDiscoveryManager {
             // Collision Avoidance: Add randomized jitter delay before connecting
             const jitterMs = 300 + Math.floor(Math.random() * 800);
             setTimeout(() => {
-              if (this.active && !this.connectingPeers.has(peerNodeId)) {
+              const currentNow = Date.now();
+              const recentConnect = this.lastConnections.get(peerNodeId) || 0;
+              if (
+                this.active &&
+                !this.connectingPeers.has(peerNodeId) &&
+                currentNow - recentConnect >= CONNECTION_COOLDOWN_MS
+              ) {
                 this._connectAndSync(device, peerNodeId);
               }
             }, jitterMs);

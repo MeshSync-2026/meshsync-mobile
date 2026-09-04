@@ -9,35 +9,57 @@ import TopAppBar from '../components/TopAppBar';
 
 export default function MyActivityScreen() {
   const { colors, spacing, radius, typography } = useTheme();
-  const { myEvents, peerCount, isOnline } = useMeshSync();
+  const { myEvents, relayedCount, peerCount, isOnline } = useMeshSync();
 
   const formattedFeed = useMemo(() => {
-    return (myEvents || [])
-      .map((evt) => {
-        const typeCode = evt.event_type_code || evt.eventTypeCode;
-        let icon = 'podcasts';
-        if (typeCode === EVENT_TYPE.SOS_CREATED) icon = 'priority-high';
-        else if (typeCode === EVENT_TYPE.STATUS_UPDATE) icon = 'medical-services';
-        else if (typeCode === EVENT_TYPE.RESPONDER_EN_ROUTE) icon = 'directions-run';
-        else if (typeCode === EVENT_TYPE.SOS_RESOLVED) icon = 'check-circle';
+    const sorted = [...(myEvents || [])].sort((a, b) => {
+      const timeA = a.created_at || a.createdAt || 0;
+      const timeB = b.created_at || b.createdAt || 0;
+      return timeB - timeA;
+    });
 
-        const createdAt = evt.created_at || evt.createdAt || Date.now();
-        const diffMins = Math.max(1, Math.round((Date.now() - createdAt) / 60000));
-        const timeText = diffMins < 60 ? `${diffMins} mins ago` : `${Math.round(diffMins / 60)} hours ago`;
+    return sorted.map((evt) => {
+      const typeCode = evt.event_type_code || evt.eventTypeCode;
+      const reportTypeCode = evt.report_type_code || evt.reportTypeCode;
 
-        const isSynced = evt.is_cloud_synced ?? evt.isCloudSynced ?? false;
+      let icon = 'podcasts';
+      let title = EVENT_TYPE_LABEL[typeCode] || 'Mesh Broadcast';
 
-        return {
-          id: evt.id,
-          title: EVENT_TYPE_LABEL[typeCode] || 'Mesh Broadcast',
-          subtitle: evt.landmark_name || evt.landmarkName || `Seq #${evt.seq}`,
-          time: timeText,
-          status: isSynced ? 'synced' : 'pending',
-          icon,
-          note: isSynced ? 'Synced to Cloud & Command Center' : 'Relayed via local BLE mesh',
-        };
-      })
-      .reverse(); // Most recent first
+      if (typeCode === EVENT_TYPE.SOS_CREATED) {
+        icon = 'priority-high';
+        title = 'Emergency SOS Alert';
+      } else if (typeCode === EVENT_TYPE.STATUS_UPDATE) {
+        if (reportTypeCode === 2 || evt.category_code != null) {
+          icon = 'warning';
+          title = evt.landmark_name ? `Hazard: ${evt.landmark_name}` : 'Hazard Report';
+        } else {
+          icon = 'health-and-safety';
+          title = 'Life Safety Status Update';
+        }
+      } else if (typeCode === EVENT_TYPE.RESPONDER_EN_ROUTE) {
+        icon = 'directions-run';
+        title = 'Responder En Route';
+      } else if (typeCode === EVENT_TYPE.SOS_RESOLVED) {
+        icon = 'check-circle';
+        title = 'Incident Resolved';
+      }
+
+      const createdAt = evt.created_at || evt.createdAt || Date.now();
+      const diffMins = Math.max(1, Math.round((Date.now() - createdAt) / 60000));
+      const timeText = diffMins < 60 ? `${diffMins} mins ago` : `${Math.round(diffMins / 60)} hours ago`;
+
+      const isSynced = evt.is_cloud_synced ?? evt.isCloudSynced ?? false;
+
+      return {
+        id: evt.id,
+        title,
+        subtitle: evt.landmark_name || `Seq #${evt.seq}`,
+        time: timeText,
+        status: isSynced ? 'synced' : 'pending',
+        icon,
+        note: isSynced ? 'Synced to Cloud & Command Center' : 'Relayed via local BLE mesh',
+      };
+    });
   }, [myEvents]);
 
   return (
@@ -101,6 +123,10 @@ export default function MyActivityScreen() {
               <View>
                 <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{myEvents.length}</Text>
                 <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>My Transmitted Events</Text>
+              </View>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{relayedCount ?? 0}</Text>
+                <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Relayed for Peers</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={[typography.labelLg, { color: colors.onSurface }]}>{peerCount} Nodes</Text>

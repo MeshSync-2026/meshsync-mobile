@@ -8,7 +8,9 @@
     "splash": {
       "backgroundColor": "#FAFAFA"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "org.meshsync.app"
@@ -24,7 +26,10 @@
         "BLUETOOTH_ADVERTISE",
         "BLUETOOTH_CONNECT",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "plugins": [
@@ -32,10 +37,18 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["peripheral", "central"],
+          "modes": [
+            "peripheral",
+            "central"
+          ],
           "bluetoothAlwaysPermission": "Allow MeshSync to discover and sync with nearby emergency responders."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0877bfdd-af40-4747-aae6-8100a2fb3b7c"
+      }
+    }
   }
 }

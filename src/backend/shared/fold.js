@@ -119,9 +119,9 @@ export function lwwFold(sortedEvents) {
           creator_node_id: evt.origin_node_id,
           latitude: evt.latitude,
           longitude: evt.longitude,
-          landmark_name: evt.landmark_name || null,
-          report_type_code: evt.report_type_code,
-          category_code: evt.category_code || null,
+          landmark_name: evt.landmark_name ?? evt.landmarkName ?? null,
+          report_type_code: evt.report_type_code ?? evt.reportTypeCode,
+          category_code: evt.category_code ?? evt.categoryCode ?? null,
           severity_level: evt.severity_level,
           status_safety: evt.status_safety,
           people_count: evt.people_count,
@@ -182,14 +182,14 @@ export function lwwFold(sortedEvents) {
             creator_node_id: evt.origin_node_id,
             latitude: evt.latitude,
             longitude: evt.longitude,
-            landmark_name: evt.landmark_name || null,
-            report_type_code: evt.report_type_code || REPORT_TYPE.HAZARD,
-            category_code: evt.category_code || null,
-            severity_level: evt.severity_level ?? SEVERITY.MEDIUM,
-            status_safety: evt.status_safety,
-            people_count: evt.people_count,
-            status_water: evt.status_water,
-            status_injury: evt.status_injury,
+            landmark_name: evt.landmark_name ?? evt.landmarkName ?? null,
+            report_type_code: evt.report_type_code ?? evt.reportTypeCode ?? REPORT_TYPE.HAZARD,
+            category_code: evt.category_code ?? evt.categoryCode ?? null,
+            severity_level: evt.severity_level ?? evt.severityLevel ?? SEVERITY.MEDIUM,
+            status_safety: evt.status_safety ?? evt.statusSafety,
+            people_count: evt.people_count ?? evt.peopleCount,
+            status_water: evt.status_water ?? evt.statusWater,
+            status_injury: evt.status_injury ?? evt.statusInjury,
             status_code: STATUS.OPEN,
             confidence_code: CONFIDENCE.LIVE,
             last_heartbeat_at: evt.created_at,
@@ -201,16 +201,25 @@ export function lwwFold(sortedEvents) {
           incidents.set(incId, inc);
         } else {
           // Update incident fields via LWW
-          if (evt.report_type_code != null) inc.report_type_code = evt.report_type_code;
-          if (evt.category_code != null) inc.category_code = evt.category_code;
-          if (evt.severity_level != null) inc.severity_level = evt.severity_level;
-          if (evt.status_safety != null) inc.status_safety = evt.status_safety;
-          if (evt.people_count != null) inc.people_count = evt.people_count;
-          if (evt.status_water != null) inc.status_water = evt.status_water;
-          if (evt.status_injury != null) inc.status_injury = evt.status_injury;
+          const reportTypeCode = evt.report_type_code ?? evt.reportTypeCode;
+          const categoryCode = evt.category_code ?? evt.categoryCode;
+          const severityLevel = evt.severity_level ?? evt.severityLevel;
+          const statusSafety = evt.status_safety ?? evt.statusSafety;
+          const peopleCount = evt.people_count ?? evt.peopleCount;
+          const statusWater = evt.status_water ?? evt.statusWater;
+          const statusInjury = evt.status_injury ?? evt.statusInjury;
+          const landmarkName = evt.landmark_name ?? evt.landmarkName;
+
+          if (reportTypeCode != null) inc.report_type_code = reportTypeCode;
+          if (categoryCode != null) inc.category_code = categoryCode;
+          if (severityLevel != null) inc.severity_level = severityLevel;
+          if (statusSafety != null) inc.status_safety = statusSafety;
+          if (peopleCount != null) inc.people_count = peopleCount;
+          if (statusWater != null) inc.status_water = statusWater;
+          if (statusInjury != null) inc.status_injury = statusInjury;
           if (evt.latitude != null) inc.latitude = evt.latitude;
           if (evt.longitude != null) inc.longitude = evt.longitude;
-          if (evt.landmark_name != null) inc.landmark_name = evt.landmark_name;
+          if (landmarkName != null) inc.landmark_name = landmarkName;
           inc.updated_at = evt.created_at;
           inc.last_event_hlc = evt.hlc_timestamp;
         }

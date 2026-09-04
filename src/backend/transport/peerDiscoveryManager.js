@@ -210,6 +210,7 @@ export class PeerDiscoveryManager {
       this.peripheral = new PeripheralModule();
 
       this.peripheral.on("ready", async () => {
+        if (!this.isScanning) return;
         try {
           await this.peripheral.addService(SERVICE_UUID, true);
 
@@ -229,11 +230,16 @@ export class PeerDiscoveryManager {
             Permission.WRITEABLE
           );
 
+          if (!this.isScanning) return;
           await this._syncLocalPayloadToGatt();
           await this.peripheral.startAdvertising();
-          console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
+          if (this.isScanning) {
+            console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
+          }
         } catch (err) {
-          console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+          if (this.isScanning) {
+            console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+          }
         }
       });
 
@@ -269,8 +275,14 @@ export class PeerDiscoveryManager {
             return;
           }
 
-          const devName = device?.name || device?.localName;
-          if (devName && devName.startsWith("MeshSync-")) {
+          const devName =
+            device?.name && device.name.startsWith("MeshSync-")
+              ? device.name
+              : device?.localName && device.localName.startsWith("MeshSync-")
+              ? device.localName
+              : null;
+
+          if (devName) {
             const peerNodeId = devName.substring("MeshSync-".length).trim();
             if (!peerNodeId || peerNodeId === this.nodeId) return; // Skip self
 
@@ -284,7 +296,13 @@ export class PeerDiscoveryManager {
             // Collision Avoidance: Add randomized jitter delay before connecting
             const jitterMs = 300 + Math.floor(Math.random() * 800);
             setTimeout(() => {
-              if (this.active && !this.connectingPeers.has(peerNodeId)) {
+              const currentNow = Date.now();
+              const recentConnect = this.lastConnections.get(peerNodeId) || 0;
+              if (
+                this.active &&
+                !this.connectingPeers.has(peerNodeId) &&
+                currentNow - recentConnect >= CONNECTION_COOLDOWN_MS
+              ) {
                 this._connectAndSync(device, peerNodeId);
               }
             }, jitterMs);

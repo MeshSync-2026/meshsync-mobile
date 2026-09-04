@@ -211,10 +211,34 @@ export default function ResponderLoginScreen({
         >
 
           {/* =========================
-              THEME BUTTON
+              TOP ACTIONS
               ========================= */}
 
           <View style={styles.topActions}>
+
+            <Pressable
+              onPress={() => navigation.goBack()}
+              style={[
+                styles.iconBtn,
+                {
+                  borderColor:
+                    colors.outlineVariant,
+
+                  backgroundColor:
+                    colors.surfaceContainerLowest,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+
+              <MaterialIcons
+                name="arrow-back"
+                size={22}
+                color={colors.onSurface}
+              />
+
+            </Pressable>
 
             <Pressable
               onPress={toggleScheme}
@@ -943,7 +967,8 @@ const styles = StyleSheet.create({
   topActions: {
     width: '100%',
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
 

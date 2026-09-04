@@ -10,6 +10,24 @@ import MeshStatusBar from '../components/MeshStatusBar';
 import TopAppBar from '../components/TopAppBar';
 import RadarView from '../components/RadarView';
 
+const HAZARD_MAP = {
+  1: { label: 'Flood Hazard', icon: 'flood' },
+  2: { label: 'Landslide', icon: 'terrain' },
+  3: { label: 'Severe Storm', icon: 'storm' },
+  4: { label: 'Fire Outbreak', icon: 'local-fire-department' },
+  5: { label: 'Medical Emergency', icon: 'medical-services' },
+  6: { label: 'Structural Damage', icon: 'construction' },
+};
+
+const SAFETY_MAP = {
+  0: { label: 'Safe', color: '#10B981' },
+  1: { label: 'Needs Assistance', color: '#F59E0B' },
+  2: { label: 'Trapped / Immediate Rescue', color: '#EF4444' },
+};
+
+const WATER_MAP = { 0: 'Water Supply: Good', 1: 'Water: Low', 2: 'No Water' };
+const INJURY_MAP = { 0: 'No Injuries', 1: 'Minor Injuries', 2: 'Severe Injuries' };
+
 export default function NearbyReportsScreen() {
   const { colors, spacing, radius, typography, isDark } = useTheme();
   const { incidents, userLocation, peerCount, isOnline } = useMeshSync();
@@ -17,22 +35,26 @@ export default function NearbyReportsScreen() {
   const cardSurface = isDark ? colors.surfaceContainerHigh : colors.surfaceContainerLowest;
   const mutedPanel = isDark ? colors.surfaceContainerHigh : '#F3F3F3';
 
-  // Partition incidents into Urgent, Community Reports, and Resolved
+  // Partition and sort incidents descending by latest timestamp
   const { urgentRequests, communityReports, resolvedReports } = useMemo(() => {
     const urgent = [];
     const community = [];
     const resolved = [];
 
-    (incidents || []).forEach((inc) => {
-      const isResolved = inc.status === STATUS.RESOLVED || inc.statusCode === STATUS.RESOLVED;
+    const sorted = [...(incidents || [])].sort((a, b) => {
+      const timeA = a.created_at || a.createdAt || 0;
+      const timeB = b.created_at || b.createdAt || 0;
+      return timeB - timeA;
+    });
+
+    sorted.forEach((inc) => {
+      const isResolved = inc.status === STATUS.RESOLVED || inc.statusCode === STATUS.RESOLVED || inc.status_code === STATUS.RESOLVED;
       if (isResolved) {
         resolved.push(inc);
       } else if (
         inc.report_type_code === REPORT_TYPE.SOS ||
         inc.reportTypeCode === REPORT_TYPE.SOS ||
-        inc.event_type_code === 1 ||
-        inc.severity_level === SEVERITY.HIGH ||
-        inc.severity === 'high'
+        (inc.event_type_code === 1 && !inc.report_type_code)
       ) {
         urgent.push(inc);
       } else {
@@ -45,7 +67,7 @@ export default function NearbyReportsScreen() {
 
   const getDistanceText = (inc) => {
     if (!userLocation || inc.latitude == null || inc.longitude == null) {
-      return inc.landmark_name || inc.location || '~nearby';
+      return inc.landmark_name || '~nearby';
     }
     const dist = calculateDistance(
       userLocation.latitude,
@@ -79,7 +101,7 @@ export default function NearbyReportsScreen() {
           <RadarView />
         </View>
 
-        {/* URGENT REQUESTS */}
+        {/* URGENT REQUESTS (SOS) */}
         <View style={{ gap: spacing.sm }}>
           <View style={styles.sectionHeader}>
             <MaterialIcons name="warning" size={20} color={colors.error} />
@@ -98,25 +120,38 @@ export default function NearbyReportsScreen() {
             urgentRequests.map((r) => (
               <View key={r.id} style={[styles.urgentCard, { backgroundColor: cardSurface, borderColor: colors.error, borderRadius: radius.xl }]}> 
                 <View style={styles.urgentHeader}>
-                  <View style={[styles.urgentIconWrap, { backgroundColor: isDark ? '#3B3B3B' : '#EAEAEA' }]}>
-                    <MaterialIcons name="medical-services" size={24} color={colors.error} />
+                  <View style={[styles.urgentIconWrap, { backgroundColor: isDark ? '#3B3B3B' : '#FEE2E2' }]}>
+                    <MaterialIcons name="priority-high" size={24} color={colors.error} />
                   </View>
-                  <Text style={[typography.headlineMd, { color: colors.onSurface, flex: 1 }]}>
-                    {r.title || 'Emergency Assistance Needed'}
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[typography.headlineMd, { color: colors.onSurface }]}>
+                      {r.landmark_name?.startsWith("SOS:") ? r.landmark_name : (r.title || 'Emergency Assistance Needed')}
+                    </Text>
+                    <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+                      {getDistanceText(r)} • {getTimeText(r)}
+                    </Text>
+                  </View>
                   <View style={[styles.sosBadge, { backgroundColor: colors.error, borderRadius: radius.md }]}>
-                    <Text style={[typography.labelLg, { color: colors.onPrimary }]}>SOS</Text>
+                    <Text style={[typography.labelLg, { color: '#FFFFFF', fontWeight: '700' }]}>SOS</Text>
                   </View>
                 </View>
-                <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                  {getDistanceText(r)} • {getTimeText(r)}
+
+                {r.landmark_name && !r.landmark_name.startsWith("SOS:") ? (
+                  <View style={styles.locationTagRow}>
+                    <MaterialIcons name="place" size={16} color={colors.error} />
+                    <Text style={[typography.labelLg, { color: colors.onSurface }]}>
+                      Location Tag: {r.landmark_name}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, marginTop: 4 }]}>
+                  {r.details || r.description || 'Immediate emergency help requested by nearby mesh node.'}
                 </Text>
-                <Text style={[typography.bodyMd, { color: colors.onSurface, marginTop: 4 }]}>
-                  {r.details || r.description || r.landmark_name || 'Immediate local emergency reported over mesh.'}
-                </Text>
+
                 <TouchableOpacity
                   style={[styles.helpButton, { backgroundColor: isDark ? colors.surfaceContainerLowest : '#F7F7F7', borderColor: colors.outlineVariant, borderRadius: radius.md }]}
-                  onPress={() => Alert.alert('Help Offer Transmitted', 'Your responder availability will be announced to the sender.')}
+                  onPress={() => Alert.alert('Help Offer Transmitted', 'Your availability will be announced over the mesh.')}
                 >
                   <MaterialIcons name="handshake" size={18} color={colors.onSurface} />
                   <Text style={[typography.labelLg, { color: colors.onSurface }]}>I can help</Text>
@@ -126,7 +161,7 @@ export default function NearbyReportsScreen() {
           )}
         </View>
 
-        {/* COMMUNITY REPORTS */}
+        {/* COMMUNITY REPORTS (HAZARDS & STATUS UPDATES) */}
         <View style={{ gap: spacing.sm }}>
           <View style={styles.sectionHeader}>
             <MaterialIcons name="groups" size={20} color={colors.onSurface} />
@@ -138,41 +173,91 @@ export default function NearbyReportsScreen() {
           {communityReports.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: mutedPanel, borderRadius: radius.xl, borderColor: colors.outlineVariant }]}>
               <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, textAlign: 'center' }]}>
-                No community hazard reports active.
+                No community hazard or status reports active.
               </Text>
             </View>
           ) : (
-            communityReports.map((r) => (
-              <View key={r.id} style={[styles.reportCard, { backgroundColor: mutedPanel, borderColor: colors.outlineVariant, borderRadius: radius.xl }]}>
-                <View style={styles.reportRow}>
-                  <View style={[styles.reportIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#E9EBEB' }]}>
-                    <MaterialIcons name={r.icon || 'warning'} size={20} color={colors.onSurface} />
+            communityReports.map((r) => {
+              const isHazard = r.report_type_code === REPORT_TYPE.HAZARD || r.category_code != null;
+              const isStatus = r.report_type_code === REPORT_TYPE.STATUS || r.status_safety != null;
+
+              const hazardInfo = HAZARD_MAP[r.category_code] || { label: 'Hazard Report', icon: 'warning' };
+              const safetyInfo = SAFETY_MAP[r.status_safety] || { label: 'Status Update', color: colors.primary };
+
+              const severityText = r.severity_level === 3 ? 'High' : r.severity_level === 2 ? 'Medium' : 'Low';
+              const severityColor = r.severity_level === 3 ? colors.error : r.severity_level === 2 ? '#F59E0B' : colors.primary;
+
+              return (
+                <View key={r.id} style={[styles.reportCard, { backgroundColor: mutedPanel, borderColor: colors.outlineVariant, borderRadius: radius.xl }]}>
+                  <View style={styles.reportRow}>
+                    <View style={[styles.reportIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#E9EBEB' }]}>
+                      <MaterialIcons
+                        name={isHazard ? hazardInfo.icon : (isStatus ? 'health-and-safety' : 'warning')}
+                        size={22}
+                        color={isHazard ? severityColor : safetyInfo.color}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                        <Text style={[typography.headlineMd, { color: colors.onSurface, fontSize: 16 }]}>
+                          {isHazard ? (r.landmark_name || hazardInfo.label) : (isStatus ? `Status: ${safetyInfo.label}` : (r.title || 'Community Report'))}
+                        </Text>
+                        {isHazard ? (
+                          <View style={[styles.badge, { backgroundColor: severityColor + '22', borderColor: severityColor }]}>
+                            <Text style={[typography.labelMd, { color: severityColor, fontWeight: '700' }]}>{severityText}</Text>
+                          </View>
+                        ) : isStatus ? (
+                          <View style={[styles.badge, { backgroundColor: safetyInfo.color + '22', borderColor: safetyInfo.color }]}>
+                            <Text style={[typography.labelMd, { color: safetyInfo.color, fontWeight: '700' }]}>{safetyInfo.label}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, marginTop: 2 }]}>
+                        {getDistanceText(r)} • {getTimeText(r)}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[typography.labelLg, { color: colors.onSurface }]}>
-                      {r.title || 'Hazard Report'}
-                    </Text>
+
+                  {/* Details / Content */}
+                  {isStatus ? (
+                    <View style={{ gap: 4, marginTop: 4 }}>
+                      <Text style={[typography.bodyMd, { color: colors.onSurface }]}>
+                        {WATER_MAP[r.status_water] || 'Water: Normal'} • {INJURY_MAP[r.status_injury] || 'No Injuries'} • {r.people_count ?? 1} People
+                      </Text>
+                      {r.landmark_name && (
+                        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+                          Location: {r.landmark_name}
+                        </Text>
+                      )}
+                    </View>
+                  ) : (
+                    <View style={{ gap: 4, marginTop: 4 }}>
+                      <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant }]}>
+                        {r.details || r.description || `${hazardInfo.label} reported in this mesh sector.`}
+                      </Text>
+                      {r.landmark_name && (
+                        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+                          Location: {r.landmark_name}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  <View style={styles.reportFooter}>
                     <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                      {getDistanceText(r)} • {getTimeText(r)}
+                      Origin Node: {r.creator_node_id ? r.creator_node_id.slice(-8) : 'Nearby'}
                     </Text>
+                    <TouchableOpacity
+                      style={[styles.detailsBtn, { borderColor: colors.outlineVariant, borderRadius: radius.md }]}
+                      onPress={() => Alert.alert('Report Summary', `${isHazard ? hazardInfo.label : 'Status Update'}\nLocation: ${getDistanceText(r)}\nDetails: ${r.details || r.landmark_name || 'None'}`)}
+                    >
+                      <Text style={[typography.labelLg, { color: colors.onSurface }]}>Details</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
-                <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant }]}>
-                  {r.details || r.description || r.landmark_name || 'Reported hazard in sector.'}
-                </Text>
-                <View style={styles.reportFooter}>
-                  <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                    {r.respondersCount || 0} responders active
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.detailsBtn, { borderColor: colors.outlineVariant, borderRadius: radius.md }]}
-                    onPress={() => Alert.alert('Incident Details', `${r.title || 'Hazard'}\nLocation: ${getDistanceText(r)}\nDetails: ${r.details || 'None'}`)}
-                  >
-                    <Text style={[typography.labelLg, { color: colors.onSurface }]}>Details</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -190,7 +275,7 @@ export default function NearbyReportsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[typography.labelLg, { color: colors.onSurfaceVariant, textDecorationLine: 'line-through' }]}>
-                    {r.title || 'Resolved Incident'}
+                    {r.landmark_name || r.title || 'Resolved Incident'}
                   </Text>
                   <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
                     Resolved • {getTimeText(r)}
@@ -213,13 +298,15 @@ const styles = StyleSheet.create({
   urgentCard: { borderWidth: 2, padding: 16 },
   urgentHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   urgentIconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  sosBadge: { paddingHorizontal: 12, paddingVertical: 8 },
+  sosBadge: { paddingHorizontal: 12, paddingVertical: 6 },
+  locationTagRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   helpButton: { marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, paddingVertical: 12 },
   reportCard: { borderWidth: 1, padding: 14 },
-  reportRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
-  reportIconWrap: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  reportRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
+  reportIconWrap: { width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  badge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   reportFooter: { marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  detailsBtn: { borderWidth: 1, paddingVertical: 8, paddingHorizontal: 12 },
+  detailsBtn: { borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12 },
   resolvedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderWidth: 1 },
   resolvedIcon: { width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   emptyCard: { padding: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

@@ -1,15 +1,13 @@
-// bleTransport.js
-// Production BLE Mesh Transport Implementation (Path A)
-
 import { MeshTransport } from "./meshTransport";
 import { getStore } from "../store/eventStore";
+import { getNodeId, getActiveRole } from "../store/hotState";
 import { PeerDiscoveryManager } from "./peerDiscoveryManager";
 
 export class BleTransport extends MeshTransport {
   constructor(nodeId, role) {
     super();
-    this.nodeId = nodeId;
-    this.role = role || "civilian";
+    this.nodeId = nodeId || getNodeId();
+    this.role = role || getActiveRole() || "civilian";
     this.isActive = false;
     this.peerDiscovery = null;
     this.initialized = false;
@@ -102,6 +100,8 @@ export class BleTransport extends MeshTransport {
 
   getPeerCount() {
     if (!this.peerDiscovery) return 0;
-    return this.peerDiscovery.discoveredDevices?.size || 0;
+    return typeof this.peerDiscovery.getPeerCount === "function"
+      ? this.peerDiscovery.getPeerCount()
+      : (this.peerDiscovery.discoveredDevices?.size || 0);
   }
 }

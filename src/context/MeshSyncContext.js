@@ -24,7 +24,7 @@ import {
   createResponderEnRouteEvent,
   createResolveEvent,
 } from "../backend/eventCreator";
-import { clearActiveSosIncidentId } from "../backend/store/hotState";
+import { clearActiveSosIncidentId, getActiveSosIncidentId } from "../backend/store/hotState";
 import { getCurrentLocation, formatCoordinateLandmark } from "../utils/location";
 
 const MeshSyncContext = createContext(null);
@@ -268,7 +268,11 @@ export function MeshSyncProvider({ children }) {
 
     await store.insert(event);
     await broadcastEvent(event);
-    clearActiveSosIncidentId();
+
+    const localActiveSosId = getActiveSosIncidentId();
+    if (localActiveSosId && localActiveSosId === incidentId) {
+      clearActiveSosIncidentId();
+    }
 
     return { success: true, event };
   }, [broadcastEvent]);

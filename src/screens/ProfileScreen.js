@@ -32,7 +32,7 @@ export default function ProfileScreen({ navigation }) {
     toggleScheme,
   } = useTheme();
 
-  const { nodeId, isRegistered, activeRole, myEvents } = useMeshSync();
+  const { nodeId, isRegistered, activeRole, myEvents, relayedCount } = useMeshSync();
   const [profile, setProfile] = useState(null);
   const [relayAuto, setRelayAuto] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
@@ -355,150 +355,14 @@ export default function ProfileScreen({ navigation }) {
             label="Phone Number"
             value={phone}
             icon="chevron-right"
+            border
           />
-        </View>
 
-        {/* HOME LOCATION */}
-        <View style={{ gap: spacing.md }}>
-          <SectionLabel text="Home Location" />
-
-          <View
-            style={[
-              styles.locationCard,
-              {
-                backgroundColor: colors.surfaceContainerHigh,
-                borderColor: colors.outlineVariant,
-                borderRadius: radius.xl,
-                padding: spacing.md,
-              },
-            ]}
-          >
-            <View style={styles.rowGap}>
-              <MaterialIcons
-                name="home"
-                size={18}
-                color={colors.onSurface}
-              />
-
-              <Text
-                style={[
-                  typography.labelLg,
-                  { color: colors.onSurface },
-                ]}
-              >
-                Saved Home
-              </Text>
-            </View>
-
-            <Text
-              style={[
-                typography.bodyMd,
-                {
-                  color: colors.onSurface,
-                  marginTop: 8,
-                },
-              ]}
-            >
-              Location not yet saved
-            </Text>
-
-            <TouchableOpacity style={styles.linkRow}>
-              <Text
-                style={[
-                  typography.labelLg,
-                  { color: colors.primary },
-                ]}
-              >
-                Add Location
-              </Text>
-
-              <MaterialIcons
-                name="open-in-new"
-                size={16}
-                color={colors.primary}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* TEMPORARY LOCATION */}
-          <SectionLabel text="Temporary Location" />
-
-          <View
-            style={[
-              styles.locationCard,
-              {
-                backgroundColor: colors.surfaceContainerHigh,
-                borderColor: colors.outlineVariant,
-                borderRadius: radius.xl,
-                padding: spacing.md,
-              },
-            ]}
-          >
-            <View style={styles.rowGap}>
-              <MaterialIcons
-                name="location-on"
-                size={18}
-                color={colors.onSurface}
-              />
-
-              <Text
-                style={[
-                  typography.labelLg,
-                  { color: colors.onSurface },
-                ]}
-              >
-                Current Status
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.chip,
-                {
-                  borderColor: colors.outlineVariant,
-                  backgroundColor: colors.surfaceContainer,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  typography.labelMd,
-                  { color: colors.onSurface },
-                ]}
-              >
-                At Home
-              </Text>
-            </View>
-
-            <Text
-              style={[
-                typography.bodyMd,
-                {
-                  color: colors.onSurfaceVariant,
-                  marginTop: 8,
-                },
-              ]}
-            >
-              Location status will be updated automatically.
-            </Text>
-
-            <TouchableOpacity style={styles.linkRow}>
-              <Text
-                style={[
-                  typography.labelLg,
-                  { color: colors.primary },
-                ]}
-              >
-                Manage
-              </Text>
-
-              <MaterialIcons
-                name="near-me"
-                size={16}
-                color={colors.primary}
-              />
-            </TouchableOpacity>
-          </View>
+          <Row
+            label="Saved Home / Landmark"
+            value={profile.homeLandmark || profile.landmark || 'Configured during setup'}
+            icon="home"
+          />
         </View>
 
         {/* DATA SHARING */}
@@ -583,7 +447,7 @@ export default function ProfileScreen({ navigation }) {
                 { color: colors.onSurface },
               ]}
             >
-              {mockProfile.dataMuleReports}
+              {relayedCount ?? 0}
             </Text>
           </View>
         </View>

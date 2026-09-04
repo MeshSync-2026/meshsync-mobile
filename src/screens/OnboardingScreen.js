@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { saveProfile } from '../utils/storage';
+import { getCurrentLocation } from '../utils/location';
 
 export default function OnboardingScreen() {
   const navigation = useNavigation();
@@ -29,7 +30,15 @@ export default function OnboardingScreen() {
   const [fullName, setFullName] = useState('');
   const [nic, setNic] = useState('');
   const [phone, setPhone] = useState('');
+  const [landmark, setLandmark] = useState('');
+  const [currentCoords, setCurrentCoords] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    getCurrentLocation({ showAlertOnDenied: false }).then((loc) => {
+      if (loc) setCurrentCoords(loc);
+    }).catch(() => {});
+  }, []);
 
   const continueSetup = async () => {
     // Name is required
@@ -56,9 +65,11 @@ export default function OnboardingScreen() {
         nic: nic.trim(),
         phone: phone.trim(),
 
-        // These will be handled properly later
-        homeLocation: 'Current Location',
-        landmark: '',
+        homeLocation: currentCoords
+          ? { latitude: currentCoords.latitude, longitude: currentCoords.longitude }
+          : 'Current Location',
+        homeLandmark: landmark.trim() || 'Home',
+        landmark: landmark.trim() || 'Home',
         tempStatus: 'At Home',
 
         createdAt: new Date().toISOString(),
@@ -265,10 +276,15 @@ export default function OnboardingScreen() {
               },
             ]}
           >
-            Your home location is your current location and is
-            fetched automatically to receive relevant local
-            alerts.
+            Your GPS location is captured automatically to receive local alerts and emergency help.
           </Text>
+
+          <Field
+            label="Location Identifier / Landmark"
+            value={landmark}
+            onChangeText={setLandmark}
+            placeholder="e.g. Home - 45 Temple Road, 2nd Floor Apt"
+          />
         </View>
 
         {/* CONTINUE */}

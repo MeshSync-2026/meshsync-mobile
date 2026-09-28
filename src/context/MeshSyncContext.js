@@ -168,7 +168,7 @@ export function MeshSyncProvider({ children }) {
    * Send Emergency SOS (Requires GPS Permission)
    */
   const sendSOS = useCallback(async ({ landmarkName, victimName } = {}) => {
-    const loc = await getCurrentLocation({ showAlertOnDenied: true });
+    const loc = (await getCurrentLocation({ showAlertOnDenied: true })) || userLocation;
     if (!loc) {
       return { success: false, error: "Location permission required" };
     }
@@ -189,13 +189,13 @@ export function MeshSyncProvider({ children }) {
     await broadcastEvent(event);
 
     return { success: true, event };
-  }, [userProfile, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent]);
 
   /**
    * Report a Hazard (Requires GPS Permission)
    */
   const reportHazard = useCallback(async ({ categoryCode, title, details, severityLevel, landmarkName }) => {
-    const loc = await getCurrentLocation({ showAlertOnDenied: true });
+    const loc = (await getCurrentLocation({ showAlertOnDenied: true })) || userLocation;
     if (!loc) {
       return { success: false, error: "Location permission required" };
     }
@@ -217,7 +217,7 @@ export function MeshSyncProvider({ children }) {
     await broadcastEvent(event);
 
     return { success: true, event };
-  }, [broadcastEvent]);
+  }, [userLocation, broadcastEvent]);
 
   /**
    * Submit Life Safety / Need Help status update

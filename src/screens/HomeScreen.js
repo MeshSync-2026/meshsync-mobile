@@ -1,15 +1,17 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import { useMeshSync } from '../context/MeshSyncContext';
+import MeshDiagnosticsModal from '../components/MeshDiagnosticsModal';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
   const { peerCount, isOnline, sendSOS, userProfile } = useMeshSync();
+  const [showDiag, setShowDiag] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
 
   const pressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
@@ -41,17 +43,29 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.outlineVariant, paddingHorizontal: spacing.marginMobile }]}>
-        <View style={styles.headerLeft}>
+        <TouchableOpacity
+          style={styles.headerLeft}
+          activeOpacity={0.7}
+          onPress={() => setShowDiag(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Open mesh diagnostics"
+        >
           <MaterialIcons name="hub" size={18} color={colors.onSurface} />
           <View>
-            <Text style={[typography.labelLg, { color: colors.onSurface }]}>
-              {peerCount} {peerCount === 1 ? 'peer' : 'peers'} nearby
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[typography.labelLg, { color: colors.onSurface }]}>
+                {peerCount} {peerCount === 1 ? 'peer' : 'peers'} nearby
+              </Text>
+              <View style={styles.debugPill}>
+                <MaterialIcons name="bug-report" size={10} color="#3B82F6" />
+                <Text style={styles.debugText}>DEBUG</Text>
+              </View>
+            </View>
             <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
               {isOnline ? 'Online • Mesh Active' : 'Offline • Mesh Active'}
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.iconBtn}
@@ -115,6 +129,8 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <MeshDiagnosticsModal visible={showDiag} onClose={() => setShowDiag(false)} />
     </SafeAreaView>
   );
 }
@@ -128,6 +144,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  debugPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  debugText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#3B82F6',
+    letterSpacing: 0.4,
+  },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 9999 },
   banner: {

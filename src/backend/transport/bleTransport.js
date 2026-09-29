@@ -2,6 +2,7 @@ import { MeshTransport } from "./meshTransport";
 import { getStore } from "../store/eventStore";
 import { getNodeId, getActiveRole } from "../store/hotState";
 import { PeerDiscoveryManager } from "./peerDiscoveryManager";
+import { diagLog } from "../utils/diagnosticLogger";
 
 export class BleTransport extends MeshTransport {
   constructor(nodeId, role) {
@@ -16,14 +17,14 @@ export class BleTransport extends MeshTransport {
   async start() {
     if (this.isActive) return;
     this.isActive = true;
-    console.log(`[BLE Transport] Starting production BLE transport for node ${this.nodeId} (${this.role})...`);
+    diagLog.info("TRANSPORT", `Starting BLE transport for node ${this.nodeId} (${this.role})`);
 
     try {
       this.peerDiscovery = new PeerDiscoveryManager(
         this.nodeId,
         this.role,
         async (peerId, rawPayload) => {
-          console.log(`[BLE Transport] Processing incoming payload from peer: ${peerId}`);
+          diagLog.info("TRANSPORT", `Processing payload from peer: ${peerId} (${rawPayload?.length || 0} bytes)`);
           try {
             const incomingEvents = JSON.parse(rawPayload);
             const eventsList = Array.isArray(incomingEvents)
@@ -49,15 +50,22 @@ export class BleTransport extends MeshTransport {
               }
 
               if (newEvents.length > 0) {
-                console.log(`[BLE Transport] Ingested ${newEvents.length} new mesh events from peer ${peerId}`);
+                diagLog.success("TRANSPORT", `Ingested ${newEvents.length} new mesh events from peer ${peerId}`);
+                diagLog.updateState({
+                  eventsIngestedCount: (diagLog.state.eventsIngestedCount || 0) + newEvents.length,
+                });
                 this.emitEvents(newEvents);
 
                 // Update local advertising payload with newly ingested events
                 await this.sendEvents();
+              } else {
+                diagLog.info("TRANSPORT", `Received ${eventsList.length} events from ${peerId}, but all were already seen`);
               }
+            } else {
+              diagLog.warn("TRANSPORT", `Received empty event list from peer ${peerId}`);
             }
           } catch (jsonErr) {
-            console.error("[BLE Transport] Failed to parse received JSON payload:", jsonErr);
+            diagLog.error("TRANSPORT", `Failed to parse payload from ${peerId}: ${jsonErr.message}`);
           }
         }
       );

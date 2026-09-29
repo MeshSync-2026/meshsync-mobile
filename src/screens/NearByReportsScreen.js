@@ -96,6 +96,82 @@ export default function NearbyReportsScreen() {
     return `${diffHours}h ago`;
   };
 
+  const getReporterName = (r) => {
+    if (r.reporter_name || r.reporterName) return r.reporter_name || r.reporterName;
+    if (r.victim_name || r.victimName) return r.victim_name || r.victimName;
+    const landmark = r.landmark_name ?? r.landmarkName;
+    if (landmark && typeof landmark === 'string' && landmark.startsWith('SOS:')) {
+      const parsed = landmark.replace(/^SOS:\s*/, '').trim();
+      if (parsed) return parsed;
+    }
+    const creator = r.creator_node_id || r.creatorNodeId || r.origin_node_id || r.originNodeId;
+    return creator ? `Node ${creator.slice(-8)}` : 'Anonymous Peer';
+  };
+
+  const getLandmarkName = (r) => {
+    const landmark = r.landmark_name ?? r.landmarkName;
+    if (landmark && typeof landmark === 'string') {
+      if (landmark.startsWith('SOS:')) {
+        return null;
+      }
+      return landmark;
+    }
+    return null;
+  };
+
+  const showReportDetails = (r, isUrgent = false) => {
+    const reportTypeCode = r.report_type_code ?? r.reportTypeCode;
+    const categoryCode = r.category_code ?? r.categoryCode;
+    const isHazard = reportTypeCode === REPORT_TYPE.HAZARD || categoryCode != null;
+    const isStatus = reportTypeCode === REPORT_TYPE.STATUS || r.status_safety != null;
+
+    const hazardInfo = HAZARD_MAP[categoryCode] || { label: 'Hazard Report' };
+    const safetyInfo = SAFETY_MAP[r.status_safety ?? r.statusSafety];
+
+    let reportTypeTitle = 'Incident Report';
+    if (isUrgent) {
+      reportTypeTitle = 'Urgent SOS Emergency';
+    } else if (isHazard) {
+      reportTypeTitle = hazardInfo.label;
+    } else if (isStatus) {
+      reportTypeTitle = `Status Update (${safetyInfo?.label || 'General'})`;
+    }
+
+    const reporter = getReporterName(r);
+    const landmark = getLandmarkName(r) || (r.landmark_name ?? r.landmarkName) || 'Not specified';
+    const distance = getDistanceText(r);
+    const time = getTimeText(r);
+    const details = r.details || r.description || (isUrgent ? 'Immediate assistance requested by nearby mesh node.' : 'No additional details provided.');
+
+    const lines = [
+      `Type: ${reportTypeTitle}`,
+      `Reporter: ${reporter}`,
+      `Landmark: ${landmark}`,
+      `Distance: ${distance} (${time})`,
+    ];
+
+    if (r.severity_level != null || r.severityLevel != null) {
+      const sev = r.severity_level ?? r.severityLevel;
+      lines.push(`Severity: ${sev === 3 ? 'High' : sev === 2 ? 'Medium' : 'Low'}`);
+    }
+
+    if (r.people_count != null || r.peopleCount != null) {
+      lines.push(`People Affected: ${r.people_count ?? r.peopleCount}`);
+    }
+
+    if (r.status_water != null || r.statusWater != null) {
+      lines.push(`Water: ${WATER_MAP[r.status_water ?? r.statusWater] || 'Normal'}`);
+    }
+
+    if (r.status_injury != null || r.statusInjury != null) {
+      lines.push(`Injuries: ${INJURY_MAP[r.status_injury ?? r.statusInjury] || 'None'}`);
+    }
+
+    lines.push(`\nDetails:\n${details}`);
+
+    Alert.alert('Report Details', lines.join('\n'));
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <MeshStatusBar nodesInRange={peerCount} label={isOnline ? `Online • Mesh Active (${peerCount} nodes)` : undefined} />
@@ -131,6 +207,9 @@ export default function NearbyReportsScreen() {
               const landmarkName = r.landmark_name ?? r.landmarkName;
               const details = r.details || r.description;
               const title = r.title;
+              const reporterName = getReporterName(r);
+              const cleanLandmark = getLandmarkName(r);
+
               return (
                 <View key={r.id} style={[styles.urgentCard, { backgroundColor: cardSurface, borderColor: colors.error, borderRadius: radius.xl }]}> 
                   <View style={styles.urgentHeader}>
@@ -150,26 +229,44 @@ export default function NearbyReportsScreen() {
                     </View>
                   </View>
 
-                  {landmarkName && !landmarkName.startsWith("SOS:") ? (
-                    <View style={styles.locationTagRow}>
-                      <MaterialIcons name="place" size={16} color={colors.error} />
-                      <Text style={[typography.labelLg, { color: colors.onSurface }]}>
-                        Location Tag: {landmarkName}
+                  <View style={{ gap: 4, marginTop: 8 }}>
+                    <View style={styles.infoRow}>
+                      <MaterialIcons name="person" size={16} color={colors.onSurfaceVariant} />
+                      <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+                        Reporter: <Text style={{ color: colors.onSurface, fontWeight: '600' }}>{reporterName}</Text>
                       </Text>
                     </View>
-                  ) : null}
 
-                  <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, marginTop: 4 }]}>
+                    {cleanLandmark ? (
+                      <View style={styles.infoRow}>
+                        <MaterialIcons name="place" size={16} color={colors.error} />
+                        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+                          Landmark: <Text style={{ color: colors.onSurface, fontWeight: '600' }}>{cleanLandmark}</Text>
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, marginTop: 6 }]}>
                     {details || 'Immediate emergency help requested by nearby mesh node.'}
                   </Text>
 
-                  <TouchableOpacity
-                    style={[styles.helpButton, { backgroundColor: isDark ? colors.surfaceContainerLowest : '#F7F7F7', borderColor: colors.outlineVariant, borderRadius: radius.md }]}
-                    onPress={() => Alert.alert('Help Offer Transmitted', 'Your availability will be announced over the mesh.')}
-                  >
-                    <MaterialIcons name="handshake" size={18} color={colors.onSurface} />
-                    <Text style={[typography.labelLg, { color: colors.onSurface }]}>I can help</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                    <TouchableOpacity
+                      style={[styles.detailsBtn, { borderColor: colors.outlineVariant, borderRadius: radius.md, flex: 1, alignItems: 'center', justifyContent: 'center' }]}
+                      onPress={() => showReportDetails(r, true)}
+                    >
+                      <Text style={[typography.labelLg, { color: colors.onSurface }]}>Details</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.helpButton, { backgroundColor: isDark ? colors.surfaceContainerLowest : '#F7F7F7', borderColor: colors.outlineVariant, borderRadius: radius.md, flex: 2, marginTop: 0 }]}
+                      onPress={() => Alert.alert('Help Offer Transmitted', 'Your availability will be announced over the mesh.')}
+                    >
+                      <MaterialIcons name="handshake" size={18} color={colors.onSurface} />
+                      <Text style={[typography.labelLg, { color: colors.onSurface }]}>I can help</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               );
             })
@@ -203,6 +300,7 @@ export default function NearbyReportsScreen() {
               const landmarkName = r.landmark_name ?? r.landmarkName;
               const creatorNodeId = r.creator_node_id ?? r.creatorNodeId;
               const details = r.details || r.description;
+              const reporterName = getReporterName(r);
 
               const isHazard = reportTypeCode === REPORT_TYPE.HAZARD || categoryCode != null;
               const isStatus = reportTypeCode === REPORT_TYPE.STATUS || statusSafety != null;
@@ -251,10 +349,19 @@ export default function NearbyReportsScreen() {
                       <Text style={[typography.bodyMd, { color: colors.onSurface }]}>
                         {WATER_MAP[statusWater] || 'Water: Normal'} • {INJURY_MAP[statusInjury] || 'No Injuries'} • {peopleCount} People
                       </Text>
-                      {landmarkName && (
+                      <View style={styles.infoRow}>
+                        <MaterialIcons name="person" size={15} color={colors.onSurfaceVariant} />
                         <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                          Location: {landmarkName}
+                          Reporter: <Text style={{ color: colors.onSurface, fontWeight: '600' }}>{reporterName}</Text>
                         </Text>
+                      </View>
+                      {landmarkName && (
+                        <View style={styles.infoRow}>
+                          <MaterialIcons name="place" size={15} color={colors.primary} />
+                          <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+                            Landmark: <Text style={{ color: colors.onSurface, fontWeight: '600' }}>{landmarkName}</Text>
+                          </Text>
+                        </View>
                       )}
                     </View>
                   ) : (
@@ -262,10 +369,19 @@ export default function NearbyReportsScreen() {
                       <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant }]}>
                         {details || `${hazardInfo.label} reported in this mesh sector.`}
                       </Text>
-                      {landmarkName && (
+                      <View style={styles.infoRow}>
+                        <MaterialIcons name="person" size={15} color={colors.onSurfaceVariant} />
                         <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                          Location: {landmarkName}
+                          Reporter: <Text style={{ color: colors.onSurface, fontWeight: '600' }}>{reporterName}</Text>
                         </Text>
+                      </View>
+                      {landmarkName && (
+                        <View style={styles.infoRow}>
+                          <MaterialIcons name="place" size={15} color={colors.primary} />
+                          <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
+                            Landmark: <Text style={{ color: colors.onSurface, fontWeight: '600' }}>{landmarkName}</Text>
+                          </Text>
+                        </View>
                       )}
                     </View>
                   )}
@@ -276,7 +392,7 @@ export default function NearbyReportsScreen() {
                     </Text>
                     <TouchableOpacity
                       style={[styles.detailsBtn, { borderColor: colors.outlineVariant, borderRadius: radius.md }]}
-                      onPress={() => Alert.alert('Report Summary', `${isHazard ? hazardInfo.label : 'Status Update'}\nLocation: ${getDistanceText(r)}\nDetails: ${details || landmarkName || 'None'}`)}
+                      onPress={() => showReportDetails(r, false)}
                     >
                       <Text style={[typography.labelLg, { color: colors.onSurface }]}>Details</Text>
                     </TouchableOpacity>
@@ -336,6 +452,7 @@ const styles = StyleSheet.create({
   badge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   reportFooter: { marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   detailsBtn: { borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
   resolvedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderWidth: 1 },
   resolvedIcon: { width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   emptyCard: { padding: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

@@ -1,4 +1,4 @@
-import { getNodeId, nextSeq, getActiveSosIncidentId, setActiveSosIncidentId } from "./store/hotState";
+import { getNodeId, nextSeq, getActiveSosIncidentId, setActiveSosIncidentId, clearActiveSosIncidentId } from "./store/hotState";
 import { HlcClock, EVENT_TYPE, REPORT_TYPE, ACTOR_ROLE, HAZARD_CATEGORY, SEVERITY, SAFETY, WATER, INJURY } from "./shared";
 
 let clock;
@@ -18,10 +18,21 @@ function base(eventTypeCode, incidentId) {
   };
 }
 
-export function createSosEvent({ latitude, longitude, landmarkName, victimName, incidentId }) {
+export function createSosEvent({
+  latitude,
+  longitude,
+  landmarkName,
+  victimName,
+  incidentId,
+  severityLevel,
+  statusSafety,
+  statusWater,
+  statusInjury,
+  peopleCount,
+}) {
   const activeIncId = incidentId || (typeof getActiveSosIncidentId === "function" ? getActiveSosIncidentId() : null);
   const eventBase = base(EVENT_TYPE.SOS_CREATED, activeIncId);
-  
+
   if (!activeIncId && typeof setActiveSosIncidentId === "function") {
     setActiveSosIncidentId(eventBase.id);
   }
@@ -32,9 +43,41 @@ export function createSosEvent({ latitude, longitude, landmarkName, victimName, 
     ...eventBase,
     actor_role_code: ACTOR_ROLE.VICTIM,
     report_type_code: REPORT_TYPE.SOS,
+    severity_level: severityLevel ?? null,
+    status_safety: statusSafety ?? null,
+    status_water: statusWater ?? null,
+    status_injury: statusInjury ?? null,
+    people_count: peopleCount ?? null,
     latitude,
     longitude,
     landmark_name: rawLandmark.slice(0, 30),
+  };
+}
+
+export function createHeartbeatEvent(incidentId, { latitude, longitude } = {}) {
+  return {
+    ...base(EVENT_TYPE.SOS_ALIVE, incidentId),
+    actor_role_code: ACTOR_ROLE.VICTIM,
+    latitude: latitude ?? null,
+    longitude: longitude ?? null,
+  };
+}
+
+export function createCancelledEvent(incidentId) {
+  const event = {
+    ...base(EVENT_TYPE.SOS_CANCELLED, incidentId),
+    actor_role_code: ACTOR_ROLE.VICTIM,
+  };
+  if (typeof getActiveSosIncidentId === "function" && getActiveSosIncidentId() === incidentId) {
+    clearActiveSosIncidentId();
+  }
+  return event;
+}
+
+export function createTombstoneEvent(incidentId) {
+  return {
+    ...base(EVENT_TYPE.TOMBSTONE, incidentId),
+    actor_role_code: ACTOR_ROLE.VICTIM,
   };
 }
 

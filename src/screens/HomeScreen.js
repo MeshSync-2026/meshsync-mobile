@@ -9,13 +9,35 @@ import { useMeshSync } from '../context/MeshSyncContext';
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
-  const { peerCount, isOnline, sendSOS, userProfile } = useMeshSync();
+  const { peerCount, isOnline, sendSOS, cancelSOS, activeSosIncidentId, userProfile } = useMeshSync();
   const scale = useRef(new Animated.Value(1)).current;
 
   const pressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
   const pressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start();
 
   const triggerSOS = () => {
+    // If an SOS is already active, offer to cancel it instead
+    if (activeSosIncidentId) {
+      Alert.alert(
+        'Cancel active SOS?',
+        'Your emergency alert is currently broadcasting. Cancel it if you are safe now.',
+        [
+          { text: 'Keep SOS', style: 'cancel' },
+          {
+            text: 'Cancel SOS',
+            style: 'destructive',
+            onPress: async () => {
+              const result = await cancelSOS();
+              if (result.success) {
+                Alert.alert('SOS Cancelled', 'Your emergency alert has been cancelled across the mesh.');
+              }
+            },
+          },
+        ],
+      );
+      return;
+    }
+
     Alert.alert(
       'Send Emergency SOS?',
       'This will broadcast an urgent emergency alert with your high-precision GPS coordinates across nearby mesh devices.',
@@ -31,11 +53,32 @@ export default function HomeScreen() {
                 'SOS Broadcasted',
                 'Your emergency alert is active and being relayed across all nearby mesh nodes.'
               );
+            } else if (result.error === 'no_sos_needed') {
+              Alert.alert(
+                'No SOS needed',
+                'Your last status says you are safe with enough supplies and no injuries. Update your status if your situation changed.',
+                [
+                  { text: 'Update My Status', onPress: () => navigation.navigate('MyStatus') },
+                  { text: 'Send anyway', style: 'destructive', onPress: sendSosForced },
+                ]
+              );
+            } else {
+              Alert.alert('Could not send SOS', result.error || 'Please try again.');
             }
           },
         },
       ],
     );
+  };
+
+  // Send SOS even when My Status says all-clear (user explicitly confirmed)
+  const sendSosForced = async () => {
+    const result = await sendSOS({ force: true });
+    if (result.success) {
+      Alert.alert('SOS Broadcasted', 'Your emergency alert is active and being relayed across all nearby mesh nodes.');
+    } else {
+      Alert.alert('Could not send SOS', result.error || 'Please try again.');
+    }
   };
 
   return (
@@ -86,8 +129,10 @@ export default function HomeScreen() {
               onPress={triggerSOS}
               style={[styles.sosButton, { backgroundColor: colors.secondary, borderColor: colors.secondaryDark }]}
             >
-              <MaterialIcons name="priority-high" size={48} color={colors.onSecondary} />
-              <Text style={[typography.headlineMd, { color: colors.onSecondary, marginTop: 6, letterSpacing: 2 }]}>SOS</Text>
+              <MaterialIcons name={activeSosIncidentId ? "cancel" : "priority-high"} size={48} color={colors.onSecondary} />
+              <Text style={[typography.headlineMd, { color: colors.onSecondary, marginTop: 6, letterSpacing: 2 }]}>
+                {activeSosIncidentId ? 'ACTIVE' : 'SOS'}
+              </Text>
             </TouchableOpacity>
           </Animated.View>
 

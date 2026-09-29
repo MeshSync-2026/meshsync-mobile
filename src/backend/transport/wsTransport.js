@@ -6,8 +6,10 @@ import { MeshTransport } from "./meshTransport";
 import { getStore } from "../store/eventStore";
 import { getNodeId } from "../store/hotState";
 
+// No fake default: without EXPO_PUBLIC_EDGE_SYNC_WS_URL the relay stays
+// disabled (one log line) instead of retrying an unresolvable host forever.
 export const DEFAULT_EDGE_SYNC_WS_URL =
-  process.env.EXPO_PUBLIC_EDGE_SYNC_WS_URL || "wss://edge-sync.meshsync.org/ws";
+  process.env.EXPO_PUBLIC_EDGE_SYNC_WS_URL || null;
 
 const PING_INTERVAL_MS = 25000; // Send heartbeat every 25 seconds
 const PING_TIMEOUT_MS = 10000;  // Force reconnect if no response in 10s
@@ -44,6 +46,11 @@ export class WsTransport extends MeshTransport {
     if (this.started) return;
     this.started = true;
     this.reconnectAttempts = 0;
+
+    if (!this.url) {
+      console.log("[WS Transport] No EXPO_PUBLIC_EDGE_SYNC_WS_URL configured — relay disabled (set it in .env)");
+      return;
+    }
 
     // Listen to network transitions (offline -> online) for instant reconnect
     try {

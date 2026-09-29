@@ -16,6 +16,25 @@ export class BleTransport extends MeshTransport {
   async start() {
     if (this.isActive) return;
     this.isActive = true;
+
+    // BLE needs the react-native-ble-plx native module — absent in Expo Go.
+    // Feature-detect once and run as a silent no-op so the UI preview works.
+    // (Jest sets JEST_WORKER_ID and mocks the native layer — don't skip there.)
+    if (!process.env.JEST_WORKER_ID) {
+      try {
+        const { NativeModules } = require("react-native");
+        if (!NativeModules.BlePlx && !NativeModules.ReactNativeMultiBlePeripheral) {
+          console.log("[BLE Transport] Native BLE unavailable (Expo Go preview) — BLE disabled, WebSocket relay active");
+          this.initialized = false;
+          return;
+        }
+      } catch (e) {
+        // react-native import issue — treat as unavailable
+        this.initialized = false;
+        return;
+      }
+    }
+
     console.log(`[BLE Transport] Starting production BLE transport for node ${this.nodeId} (${this.role})...`);
 
     try {

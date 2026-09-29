@@ -134,4 +134,39 @@ describe("eventCreator Utilities", () => {
     const result = validateEvent(event);
     expect(result.valid).toBe(true);
   });
+
+  test("createSosEvent should support locationless events with landmark fallback", () => {
+    const event = createSosEvent({
+      latitude: null,
+      longitude: null,
+      landmarkName: "Shelter B Basement Room 4",
+      victimName: "John Doe",
+    });
+
+    expect(event.latitude).toBeNull();
+    expect(event.longitude).toBeNull();
+    expect(event.landmark_name).toBe("Shelter B Basement Room 4");
+    expect(event.actor_role_code).toBe(ACTOR_ROLE.VICTIM);
+
+    const result = validateEvent(event);
+    expect(result.valid).toBe(true);
+  });
+
+  test("createHazardEvent should support locationless events with landmark fallback", () => {
+    const event = createHazardEvent({
+      category: "fire",
+      title: "Building Fire",
+      landmarkName: "Old Market Block 3",
+      latitude: null,
+      longitude: null,
+    });
+
+    expect(event.latitude).toBeNull();
+    expect(event.longitude).toBeNull();
+    expect(event.landmark_name).toBe("Old Market Block 3");
+    expect(event.category_code).toBe(HAZARD_CATEGORY.FIRE);
+
+    const result = validateEvent(event);
+    expect(result.valid).toBe(true);
+  });
 });

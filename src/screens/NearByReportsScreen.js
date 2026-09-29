@@ -30,18 +30,27 @@ const INJURY_MAP = { 0: 'No Injuries', 1: 'Minor Injuries', 2: 'Severe Injuries'
 
 export default function NearbyReportsScreen() {
   const { colors, spacing, radius, typography, isDark } = useTheme();
-  const { incidents, userLocation, peerCount, isOnline } = useMeshSync();
+  const { incidents, userLocation, peerCount, isOnline, nodeId } = useMeshSync();
 
   const cardSurface = isDark ? colors.surfaceContainerHigh : colors.surfaceContainerLowest;
   const mutedPanel = isDark ? colors.surfaceContainerHigh : '#F3F3F3';
 
-  // Partition and sort incidents descending by latest timestamp
+  // Partition and sort incidents descending by latest timestamp (excluding own device's reports)
   const { urgentRequests, communityReports, resolvedReports } = useMemo(() => {
     const urgent = [];
     const community = [];
     const resolved = [];
 
-    const sorted = [...(incidents || [])].sort((a, b) => {
+    const otherIncidents = (incidents || []).filter((inc) => {
+      const creator = inc.creator_node_id || inc.creatorNodeId || inc.origin_node_id || inc.originNodeId;
+      // Exclude reports created by this device so Nearby Reports exclusively shows peer/community alerts
+      if (nodeId && creator && creator === nodeId) {
+        return false;
+      }
+      return true;
+    });
+
+    const sorted = [...otherIncidents].sort((a, b) => {
       const timeA = a.created_at || a.createdAt || 0;
       const timeB = b.created_at || b.createdAt || 0;
       return timeB - timeA;
@@ -63,7 +72,7 @@ export default function NearbyReportsScreen() {
     });
 
     return { urgentRequests: urgent, communityReports: community, resolvedReports: resolved };
-  }, [incidents]);
+  }, [incidents, nodeId]);
 
   const getDistanceText = (inc) => {
     const landmarkName = inc.landmark_name ?? inc.landmarkName;

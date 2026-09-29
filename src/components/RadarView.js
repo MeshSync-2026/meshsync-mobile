@@ -8,17 +8,22 @@ const SIZE = 260;
 
 export default function RadarView() {
   const { colors, typography } = useTheme();
-  const { incidents, userLocation } = useMeshSync();
+  const { incidents, userLocation, nodeId } = useMeshSync();
 
   const blips = useMemo(() => {
     if (!userLocation || !incidents || incidents.length === 0) {
       return [];
     }
-    return buildRadarBlips(userLocation, incidents, {
+    const peerIncidents = incidents.filter((inc) => {
+      const creator = inc.creator_node_id || inc.creatorNodeId || inc.origin_node_id || inc.originNodeId;
+      return !(nodeId && creator && creator === nodeId);
+    });
+
+    return buildRadarBlips(userLocation, peerIncidents, {
       maxRangeMeters: 3000,
       radarSize: SIZE,
     });
-  }, [userLocation, incidents]);
+  }, [userLocation, incidents, nodeId]);
 
   const dotColor = (type) => {
     if (type === 'urgent') return colors.error;

@@ -44,7 +44,8 @@
           ],
           "bluetoothAlwaysPermission": "Allow MeshSync to discover and sync with nearby emergency responders."
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "extra": {
       "eas": {

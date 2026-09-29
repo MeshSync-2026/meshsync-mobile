@@ -15,6 +15,8 @@ import BottomTabs from './BottomTabs';
 import ReportHazardScreen from '../screens/ReportHazardScreen';
 import MyStatusScreen from '../screens/MyStatusScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import IncidentDetailScreen from '../screens/IncidentDetailScreen';
+import ResponderLoginScreen from '../screens/responder/ResponderLoginScreen';
 
 import ResponderNavigator from './ResponderNavigator';
 
@@ -113,6 +115,16 @@ export default function RootNavigator() {
           options={{
             presentation: 'modal',
           }}
+        />
+
+        <Stack.Screen
+          name="ResponderLogin"
+          component={ResponderLoginScreen}
+        />
+
+        <Stack.Screen
+          name="IncidentDetail"
+          component={IncidentDetailScreen}
         />
 
         <Stack.Screen

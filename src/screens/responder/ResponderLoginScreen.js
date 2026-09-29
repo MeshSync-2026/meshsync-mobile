@@ -149,10 +149,18 @@ export default function ResponderLoginScreen({
 
 
       /*
-       * Navigate to responder dashboard.
+       * Navigate to responder dashboard. When arriving from onboarding
+       * (root stack), 'AssignedMeshes' only exists inside the Responder
+       * navigator — fall back to the root 'Responder' route.
        */
 
-      navigation.replace('AssignedMeshes');
+      const state = navigation.getState?.();
+      const routeNames = new Set((state?.routes || []).map((r) => r.name));
+      if (routeNames.has('AssignedMeshes')) {
+        navigation.replace('AssignedMeshes');
+      } else {
+        navigation.replace('Responder');
+      }
 
     } catch (error) {
 

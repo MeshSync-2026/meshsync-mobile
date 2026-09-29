@@ -1,21 +1,21 @@
 import { database } from "../db";
 import { foldPipeline } from "../shared";
-
-const meshEvents = database.collections.get("mesh_event");
-const processedBroadcast = database.collections.get("processed_broadcast");
+import { getMemoryStore } from "./memoryStore";
 
 class EventStore {
   constructor() {
     this.listeners = new Set();
+    this.meshEvents = database.collections.get("mesh_event");
+    this.processedBroadcast = database.collections.get("processed_broadcast");
   }
 
   async insert(evt) {
     const { Q } = require("@nozbe/watermelondb");
-    const count = await meshEvents.query(Q.where("id", evt.id)).fetchCount();
+    const count = await this.meshEvents.query(Q.where("id", evt.id)).fetchCount();
     if (count > 0) return false; // idempotent
 
     await database.write(async () => {
-      await meshEvents.create((rec) => {
+      await this.meshEvents.create((rec) => {
         rec._raw.id = evt.id; // WatermelonDB requires the PK to literally be named 'id'
         rec.parentId = evt.parent_id ?? null;
         rec.incidentId = evt.incident_id;
@@ -47,7 +47,7 @@ class EventStore {
 
   async hasSeen(originNodeId, seq) {
     const { Q } = require("@nozbe/watermelondb");
-    const count = await processedBroadcast
+    const count = await this.processedBroadcast
       .query(Q.where("origin_node_id", originNodeId), Q.where("seq", seq))
       .fetchCount();
     return count > 0;
@@ -55,7 +55,7 @@ class EventStore {
 
   async markSeen(originNodeId, seq) {
     await database.write(async () => {
-      await processedBroadcast.create((rec) => {
+      await this.processedBroadcast.create((rec) => {
         rec.originNodeId = originNodeId;
         rec.seq = seq;
         rec.receivedAtMs = Date.now();
@@ -64,7 +64,7 @@ class EventStore {
   }
 
   async getAll() {
-    const rows = await meshEvents.query().fetch();
+    const rows = await this.meshEvents.query().fetch();
     return rows.map((r) => ({
       id: r.id,
       parent_id: r.parentId,
@@ -93,7 +93,7 @@ class EventStore {
 
   async getUnsynced() {
     const { Q } = require("@nozbe/watermelondb");
-    const rows = await meshEvents.query(Q.where("is_cloud_synced", false)).fetch();
+    const rows = await this.meshEvents.query(Q.where("is_cloud_synced", false)).fetch();
     return rows.map((r) => ({
       id: r.id,
       parent_id: r.parentId,
@@ -122,7 +122,7 @@ class EventStore {
 
   async markSynced(ids) {
     const { Q } = require("@nozbe/watermelondb");
-    const rows = await meshEvents.query(Q.where("id", Q.oneOf(ids))).fetch();
+    const rows = await this.meshEvents.query(Q.where("id", Q.oneOf(ids))).fetch();
     await database.write(async () => {
       for (const rec of rows) {
         await rec.update((record) => {
@@ -155,4 +155,10 @@ class EventStore {
 }
 
 let store;
-export const getStore = () => (store ??= new EventStore());
+export const getStore = () => {
+  if (!store) {
+    // Expo Go / web: WatermelonDB native module absent → in-memory fallback
+    store = database ? new EventStore() : getMemoryStore();
+  }
+  return store;
+};

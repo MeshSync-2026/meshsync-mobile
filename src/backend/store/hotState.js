@@ -56,7 +56,11 @@ if (Platform.OS === 'web') {
 
 export const storage = new MMKVClass();
 
-export const ROLE = { CIVILIAN: "CIVILIAN", RESPONDER: "RESPONDER" };
+export const ROLE = {
+  CIVILIAN: "CIVILIAN",
+  CIVILIAN_RESPONDER: "CIVILIAN_RESPONDER",
+  RESPONDER: "RESPONDER", // authorized (Command Center login)
+};
 
 export function initHotState() {
   const existingNodeId = storage.getString("node_id");
@@ -133,6 +137,7 @@ export function deregisterResponder() {
 //Active role (what's currently on screen - persists across restarts)
 export const getActiveRole = () => storage.getString("active_role") || ROLE.CIVILIAN;
 export function setActiveRole(role) {
-  if (role === ROLE.RESPONDER && !isRegistered()) return; // can't switch into a role you're not registered for
+  // Only the authorized responder role requires Command Center registration
+  if (role === ROLE.RESPONDER && !isRegistered()) return;
   storage.set("active_role", role);
 }

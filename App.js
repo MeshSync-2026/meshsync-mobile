@@ -10,6 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import {useFonts,AtkinsonHyperlegible_400Regular,AtkinsonHyperlegible_700Bold} from '@expo-google-fonts/atkinson-hyperlegible';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { MeshSyncProvider } from './src/context/MeshSyncContext';
+import { AppProvider } from './src/context/AppContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
 //keep the splash screen visible while fonts load
@@ -45,7 +46,9 @@ export default function App() {
         <SafeAreaProvider onLayout={onLayoutRootView}>
             <ThemeProvider>
                 <MeshSyncProvider>
-                    <AppShell/>
+                    <AppProvider>
+                        <AppShell/>
+                    </AppProvider>
                 </MeshSyncProvider>
             </ThemeProvider>
         </SafeAreaProvider>

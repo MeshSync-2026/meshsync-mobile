@@ -1,26 +1,18 @@
-import { Database } from "@nozbe/watermelondb";
-import SQLiteAdapter from "@nozbe/watermelondb/adapters/sqlite";
-import { meshSyncSchema } from "./schema";
-import {
-  MeshEvent,
-  Incident,
-  IncidentResponder,
-  IncidentHistory,
-  ProcessedBroadcast,
-  Tombstone,
-  MeshAssignment,
-  ResponseZone
-} from "./models";
+// Database bootstrap.
+// WatermelonDB requires the native WMDatabaseBridge module — present in dev
+// builds / APKs, absent in Expo Go. Feature-detect it: when missing (Expo Go,
+// web), export `database = null` and the app falls back to the in-memory
+// store (see store/eventStore.js) so the UI can still be previewed.
 
-const adapter = new SQLiteAdapter({
-  schema: meshSyncSchema,
-  dbName: "meshsync",
-  jsi: true, // required — SRS §9.4 needs synchronous-feeling perf for the fold pipeline
-});
+import { NativeModules } from "react-native";
 
-export const database = new Database({
-  adapter,
-  modelClasses: [
+let database = null;
+
+if (NativeModules.WMDatabaseBridge || NativeModules.WMDatabaseJSIBridge) {
+  const { Database } = require("@nozbe/watermelondb");
+  const SQLiteAdapter = require("@nozbe/watermelondb/adapters/sqlite").default;
+  const { meshSyncSchema } = require("./schema");
+  const {
     MeshEvent,
     Incident,
     IncidentResponder,
@@ -28,6 +20,28 @@ export const database = new Database({
     ProcessedBroadcast,
     Tombstone,
     MeshAssignment,
-    ResponseZone
-  ],
-});
+    ResponseZone,
+  } = require("./models");
+
+  const adapter = new SQLiteAdapter({
+    schema: meshSyncSchema,
+    dbName: "meshsync",
+    jsi: true, // required — SRS §9.4 needs synchronous-feeling perf for the fold pipeline
+  });
+
+  database = new Database({
+    adapter,
+    modelClasses: [
+      MeshEvent,
+      Incident,
+      IncidentResponder,
+      IncidentHistory,
+      ProcessedBroadcast,
+      Tombstone,
+      MeshAssignment,
+      ResponseZone,
+    ],
+  });
+} 
+
+export { database };

@@ -16,6 +16,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../theme/ThemeContext';
 import { useMeshSync } from '../context/MeshSyncContext';
+import { useApp } from '../context/AppContext';
+import { LANGS } from '../i18n/translations';
 import { ROLE } from '../backend/store/hotState';
 import TopAppBar from '../components/TopAppBar';
 import { profile as mockProfile } from '../data/mockData';
@@ -33,6 +35,7 @@ export default function ProfileScreen({ navigation }) {
   } = useTheme();
 
   const { nodeId, isRegistered, activeRole, myEvents, relayedCount } = useMeshSync();
+  const { lang, setLang } = useApp();
   const [profile, setProfile] = useState(null);
   const [relayAuto, setRelayAuto] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
@@ -185,6 +188,45 @@ export default function ProfileScreen({ navigation }) {
           gap: spacing.lg,
         }}
       >
+        {/* LANGUAGE */}
+        <View
+          style={[
+            styles.summary,
+            {
+              backgroundColor: colors.surfaceContainerHigh,
+              borderColor: colors.outlineVariant,
+              borderRadius: radius.xl,
+              padding: spacing.md,
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <MaterialIcons name="language" size={18} color={colors.onSurfaceVariant} />
+            <Text style={[typography.labelLg, { color: colors.onSurface }]}>Language</Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {LANGS.map((l) => (
+              <TouchableOpacity
+                key={l.code}
+                onPress={() => setLang(l.code)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: radius.md,
+                  borderWidth: 2,
+                  alignItems: 'center',
+                  borderColor: lang === l.code ? colors.primary : colors.outlineVariant,
+                  backgroundColor: lang === l.code ? colors.primaryContainer : colors.surfaceContainerLow,
+                }}
+              >
+                <Text style={[typography.labelMd, { color: lang === l.code ? colors.onPrimaryContainer : colors.onSurfaceVariant }]}>
+                  {l.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* PROFILE SUMMARY */}
         <View
           style={[

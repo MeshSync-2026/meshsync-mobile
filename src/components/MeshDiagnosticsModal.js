@@ -67,7 +67,7 @@ export default function MeshDiagnosticsModal({ visible, onClose }) {
               BLE Mesh Diagnostics
             </Text>
             <Text style={[typography.bodySm, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
-              Node: {nodeId || state.nodeId || 'unknown'}
+              Node: {nodeId || state.nodeId || 'unknown'} • Build v2.4.1
             </Text>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>

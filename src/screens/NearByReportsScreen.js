@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
 import { useMeshSync } from '../context/MeshSyncContext';
 import { REPORT_TYPE, SEVERITY, STATUS } from '../backend/shared/enums';
+import { SEVERITY_LABEL, SEVERITY_COLOR } from '../backend/shared/severity';
 import { calculateDistance, formatDistance } from '../backend/shared/radarGeo';
 import MeshStatusBar from '../components/MeshStatusBar';
 import TopAppBar from '../components/TopAppBar';
@@ -205,30 +206,31 @@ export default function NearbyReportsScreen() {
               const details = r.details || r.description;
 
               const isHazard = reportTypeCode === REPORT_TYPE.HAZARD || categoryCode != null;
-              const isStatus = reportTypeCode === REPORT_TYPE.STATUS || statusSafety != null;
+              const isSos = reportTypeCode === REPORT_TYPE.SOS;
+              const isStatus = !isSos && (reportTypeCode === REPORT_TYPE.STATUS || statusSafety != null);
 
               const hazardInfo = HAZARD_MAP[categoryCode] || { label: 'Hazard Report', icon: 'warning' };
               const safetyInfo = SAFETY_MAP[statusSafety] || { label: 'Status Update', color: colors.primary };
 
-              const severityText = severityLevel === 3 ? 'High' : severityLevel === 2 ? 'Medium' : 'Low';
-              const severityColor = severityLevel === 3 ? colors.error : severityLevel === 2 ? '#F59E0B' : colors.primary;
+              const severityText = SEVERITY_LABEL[severityLevel] || 'Low';
+              const severityColor = SEVERITY_COLOR[severityLevel] || colors.primary;
 
               return (
                 <View key={r.id} style={[styles.reportCard, { backgroundColor: mutedPanel, borderColor: colors.outlineVariant, borderRadius: radius.xl }]}>
                   <View style={styles.reportRow}>
                     <View style={[styles.reportIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#E9EBEB' }]}>
                       <MaterialIcons
-                        name={isHazard ? hazardInfo.icon : (isStatus ? 'health-and-safety' : 'warning')}
+                        name={isHazard ? hazardInfo.icon : (isSos ? 'sos' : (isStatus ? 'health-and-safety' : 'warning'))}
                         size={22}
-                        color={isHazard ? severityColor : safetyInfo.color}
+                        color={(isHazard || isSos) ? severityColor : safetyInfo.color}
                       />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                         <Text style={[typography.headlineMd, { color: colors.onSurface, fontSize: 16 }]}>
-                          {isHazard ? (landmarkName || hazardInfo.label) : (isStatus ? `Status: ${safetyInfo.label}` : (r.title || 'Community Report'))}
+                          {isHazard ? (landmarkName || hazardInfo.label) : (isSos ? (landmarkName || 'SOS Emergency') : (isStatus ? `Status: ${safetyInfo.label}` : (r.title || 'Community Report')))}
                         </Text>
-                        {isHazard ? (
+                        {(isHazard || isSos) ? (
                           <View style={[styles.badge, { backgroundColor: severityColor + '22', borderColor: severityColor }]}>
                             <Text style={[typography.labelMd, { color: severityColor, fontWeight: '700' }]}>{severityText}</Text>
                           </View>

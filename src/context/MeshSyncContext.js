@@ -10,6 +10,9 @@ import {
   getAssignedZoneId,
   registerAsResponder,
   deregisterResponder,
+  getLastStatus,
+  setLastStatus,
+  getLandmark,
   ROLE,
 } from "../backend/store/hotState";
 import { BleTransport } from "../backend/transport/bleTransport";
@@ -23,7 +26,13 @@ import {
   createStatusEvent,
   createResponderEnRouteEvent,
   createResolveEvent,
+  createCancelledEvent,
 } from "../backend/eventCreator";
+import { deriveSeverity } from "../backend/shared/severity";
+import { ACTOR_ROLE } from "../backend/shared/enums";
+import { registerDevice } from "../backend/cloudApi";
+import { startHeartbeat, stopHeartbeat } from "../backend/heartbeatService";
+import { startGc, stopGc } from "../backend/gcService";
 import { clearActiveSosIncidentId, getActiveSosIncidentId } from "../backend/store/hotState";
 import { getCurrentLocation, formatCoordinateLandmark } from "../utils/location";
 
@@ -33,6 +42,7 @@ export function MeshSyncProvider({ children }) {
   const [incidents, setIncidents] = useState([]);
   const [responders, setResponders] = useState([]);
   const [history, setHistory] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [myEvents, setMyEvents] = useState([]);
   const [relayedCount, setRelayedCount] = useState(0);
   const [peerCount, setPeerCount] = useState(0);
@@ -43,6 +53,7 @@ export function MeshSyncProvider({ children }) {
   const [assignedZoneId, setAssignedZoneIdState] = useState(null);
   const [nodeId, setNodeIdState] = useState("");
   const [userProfile, setUserProfile] = useState(null);
+  const [activeSosIncidentId, setActiveSosState] = useState(null);
 
   const bleTransportRef = useRef(null);
   const wsTransportRef = useRef(null);
@@ -81,6 +92,7 @@ export function MeshSyncProvider({ children }) {
         setIncidents(initialProjection.incidents || []);
         setResponders(initialProjection.responders || []);
         setHistory(initialProjection.history || []);
+        setAssignments(initialProjection.assignments || []);
       }
       refreshEventCounts();
     }).catch((err) => {
@@ -93,6 +105,7 @@ export function MeshSyncProvider({ children }) {
       setIncidents(projection?.incidents || []);
       setResponders(projection?.responders || []);
       setHistory(projection?.history || []);
+      setAssignments(projection?.assignments || []);
       refreshEventCounts();
     });
 
@@ -146,6 +159,17 @@ export function MeshSyncProvider({ children }) {
     return loc;
   }, []);
 
+  // Background services: SOS heartbeat + tombstone GC
+  useEffect(() => {
+    setActiveSosState(getActiveSosIncidentId());
+    startHeartbeat(broadcastEvent);
+    startGc(broadcastEvent);
+    return () => {
+      stopHeartbeat();
+      stopGc();
+    };
+  }, [broadcastEvent]);
+
   /**
    * Broadcast an event across all active transports and trigger cloud sync
    */
@@ -167,7 +191,17 @@ export function MeshSyncProvider({ children }) {
   /**
    * Send Emergency SOS (Captures GPS coordinates if available, otherwise falls back to landmark / profile info)
    */
-  const sendSOS = useCallback(async ({ landmarkName, victimName } = {}) => {
+  const sendSOS = useCallback(async ({ landmarkName, victimName, force = false } = {}) => {
+    // Severity comes from the victim's last My Status update (§3, severity extension).
+    // If they reported Safe + Enough + Uninjured, there is nothing to escalate.
+    const status = getLastStatus();
+    let severityLevel = deriveSeverity(status);
+    if (severityLevel === 0 && !force) {
+      return { success: false, error: "no_sos_needed" };
+    }
+    if (severityLevel === 0) severityLevel = 1; // forced SOS defaults to LOW
+
+    // GPS is best-effort: fall back to the last known location, then landmark/profile info
     const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
     if (loc) {
       setUserLocation(loc);
@@ -175,17 +209,28 @@ export function MeshSyncProvider({ children }) {
 
     const store = getStore();
     const resolvedVictim = victimName || userProfile?.fullName || userProfile?.name || "";
-    const landmark = landmarkName || (loc ? (resolvedVictim ? `SOS: ${resolvedVictim}` : formatCoordinateLandmark(loc.latitude, loc.longitude)) : (resolvedVictim ? `SOS: ${resolvedVictim}` : (userProfile?.homeLandmark || userProfile?.landmark || "Emergency Assistance Needed")));
-    
+    const landmark =
+      landmarkName ||
+      getLandmark() ||
+      (loc
+        ? (resolvedVictim ? `SOS: ${resolvedVictim}` : formatCoordinateLandmark(loc.latitude, loc.longitude))
+        : (resolvedVictim ? `SOS: ${resolvedVictim}` : (userProfile?.homeLandmark || userProfile?.landmark || "Emergency Assistance Needed")));
+
     const event = createSosEvent({
       latitude: loc?.latitude ?? null,
       longitude: loc?.longitude ?? null,
       landmarkName: landmark,
       victimName: resolvedVictim,
+      severityLevel,
+      statusSafety: status.safety,
+      statusWater: status.water,
+      statusInjury: status.injury,
+      peopleCount: status.people,
     });
 
     await store.insert(event);
     await broadcastEvent(event);
+    setActiveSosState(event.incident_id);
 
     return { success: true, event };
   }, [userLocation, userProfile, broadcastEvent]);
@@ -241,17 +286,21 @@ export function MeshSyncProvider({ children }) {
     await store.insert(event);
     await broadcastEvent(event);
 
+    // Persist so the next SOS can carry severity/status
+    setLastStatus({ safety: safetyCode, water: waterCode, injury: injuryCode, people: peopleCount });
+    if (landmarkName) setLandmark(landmarkName);
+
     return { success: true, event };
   }, [userLocation, userProfile, broadcastEvent]);
 
   /**
    * Dispatch Responder En Route to an incident
    */
-  const dispatchResponder = useCallback(async ({ incidentId, squadRoleCode }) => {
+  const dispatchResponder = useCallback(async ({ incidentId }) => {
     const store = getStore();
     const event = createResponderEnRouteEvent({
-      incident_id: incidentId,
-      squad_role_code: squadRoleCode,
+      incidentId,
+      role: isRegistered() ? ACTOR_ROLE.REGISTERED_RESPONDER : ACTOR_ROLE.CIVILIAN_RESPONDER,
     });
 
     await store.insert(event);
@@ -273,7 +322,24 @@ export function MeshSyncProvider({ children }) {
     const localActiveSosId = getActiveSosIncidentId();
     if (localActiveSosId && localActiveSosId === incidentId) {
       clearActiveSosIncidentId();
+      setActiveSosState(null);
     }
+
+    return { success: true, event };
+  }, [broadcastEvent]);
+
+  /**
+   * Cancel own active SOS (victim-initiated, append-only)
+   */
+  const cancelSOS = useCallback(async () => {
+    const activeId = getActiveSosIncidentId();
+    if (!activeId) return { success: false, error: "No active SOS" };
+
+    const store = getStore();
+    const event = createCancelledEvent(activeId);
+    await store.insert(event);
+    await broadcastEvent(event);
+    setActiveSosState(null);
 
     return { success: true, event };
   }, [broadcastEvent]);
@@ -303,15 +369,23 @@ export function MeshSyncProvider({ children }) {
         }
       }
 
+      const authorityUserId = authResult.user?.id || authResult.authority_user_id || username;
+      const zoneId = authResult.user?.assigned_zone_id || authResult.assigned_zone_id || "ZONE-DEFAULT";
+
       registerAsResponder({
-        authority_user_id: authResult.authority_user_id || username,
-        assigned_zone_id: authResult.assigned_zone_id || "ZONE-DEFAULT",
+        authority_user_id: authorityUserId,
+        assigned_zone_id: zoneId,
         token: authResult.token || "",
       });
 
       setActiveRoleState(ROLE.RESPONDER);
       setRegisteredState(true);
-      setAssignedZoneIdState(authResult.assigned_zone_id || "ZONE-DEFAULT");
+      setAssignedZoneIdState(zoneId);
+
+      // Register this device with Command Center so dispatch can target it
+      registerDevice(getNodeId(), authorityUserId).catch((e) =>
+        console.log("[MeshSyncContext] device registration deferred:", e.message)
+      );
 
       return { success: true };
     } catch (error) {
@@ -352,6 +426,7 @@ export function MeshSyncProvider({ children }) {
     incidents,
     responders,
     history,
+    assignments,
     myEvents,
     relayedCount,
     peerCount,
@@ -363,10 +438,12 @@ export function MeshSyncProvider({ children }) {
     nodeId,
     userProfile,
     activeEmergencyCount,
+    activeSosIncidentId,
 
     // Actions
     refreshLocation,
     sendSOS,
+    cancelSOS,
     reportHazard,
     updateMyStatus,
     dispatchResponder,

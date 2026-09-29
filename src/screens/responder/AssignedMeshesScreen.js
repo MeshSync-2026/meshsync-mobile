@@ -12,40 +12,40 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
 import { useMeshSync } from '../../context/MeshSyncContext';
 import { REPORT_TYPE, SEVERITY, STATUS } from '../../backend/shared/enums';
-import { profile } from '../../data/mockData';
 
 export default function AssignedMeshesScreen({ navigation }) {
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
-  const { incidents, logoutResponder, assignedZoneId, peerCount } = useMeshSync();
+  const { incidents, logoutResponder, assignedZoneId, peerCount, assignments, nodeId, userProfile } = useMeshSync();
 
   const [isOnDuty, setIsOnDuty] = useState(true);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
 
-  // Compute live counts
+  const isActive = (i) => i.status !== STATUS.RESOLVED && i.status_code !== STATUS.RESOLVED;
+
+  // Real assignments for this device or its zone, from ASSIGN events
+  const myAssignments = (assignments || []).filter(
+    (a) => a.responder_node_id === nodeId || a.zone_id === assignedZoneId
+  );
+
   const activeSosCount = (incidents || []).filter(
-    (i) =>
-      (i.status !== STATUS.RESOLVED) &&
-      (i.report_type_code === REPORT_TYPE.SOS || i.event_type_code === 1 || i.severity_level === SEVERITY.HIGH)
+    (i) => isActive(i) && (i.report_type_code === REPORT_TYPE.SOS || i.event_type_code === 1)
   ).length;
 
   const activeHazardCount = (incidents || []).filter(
-    (i) => (i.status !== STATUS.RESOLVED) && (i.report_type_code === REPORT_TYPE.HAZARD)
+    (i) => isActive(i) && i.report_type_code === REPORT_TYPE.HAZARD
   ).length;
 
-  const meshes = [
-    {
-      id: assignedZoneId || 'MS-001',
-      name: 'Batticaloa Central',
-      sos: activeSosCount,
-      hazards: activeHazardCount,
-    },
-    {
-      id: 'MS-002',
-      name: 'Batticaloa South',
-      sos: 0,
-      hazards: 0,
-    },
-  ];
+  // One row per assigned zone; fall back to the device's own zone
+  const zoneIds = myAssignments.length
+    ? [...new Set(myAssignments.map((a) => a.zone_id))]
+    : [assignedZoneId].filter(Boolean);
+
+  const meshes = zoneIds.map((zoneId, idx) => ({
+    id: zoneId || `zone-${idx}`,
+    name: zoneId || 'Assigned Zone',
+    sos: activeSosCount,
+    hazards: activeHazardCount,
+  }));
 
   return (
     <SafeAreaView
@@ -389,7 +389,7 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <MaterialIcons name="person" size={32} color={colors.onSurfaceVariant} />
               </View>
               <View>
-                <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{profile.name}</Text>
+                <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{userProfile?.name || userProfile?.fullName || 'Responder'}</Text>
                 <View style={[styles.roleBadge, { backgroundColor: colors.primary }]}>
                   <Text style={[typography.labelMd, { color: colors.onPrimary, fontWeight: '700' }]}>AUTHORIZED RESPONDER</Text>
                 </View>
@@ -401,7 +401,7 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <MaterialIcons name="person-outline" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
                 <View>
                   <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Full Name</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.fullName}</Text>
+                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{userProfile?.fullName || 'Not set'}</Text>
                 </View>
               </View>
 
@@ -409,7 +409,7 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <MaterialIcons name="credit-card" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
                 <View>
                   <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>NIC Number</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.nic}</Text>
+                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{userProfile?.nic || 'Not provided'}</Text>
                 </View>
               </View>
 
@@ -417,7 +417,7 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <MaterialIcons name="phone" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
                 <View>
                   <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Phone Number</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.phone}</Text>
+                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{userProfile?.phone || 'Not provided'}</Text>
                 </View>
               </View>
 
@@ -425,7 +425,7 @@ export default function AssignedMeshesScreen({ navigation }) {
                 <MaterialIcons name="home" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
                 <View>
                   <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Saved Home</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.homeLocation}</Text>
+                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{userProfile?.homeLandmark || userProfile?.landmark || 'Not set'}</Text>
                 </View>
               </View>
             </View>

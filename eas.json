@@ -7,12 +7,22 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_EDGE_SYNC_URL": "http://192.168.1.10:4001",
+        "EXPO_PUBLIC_EDGE_SYNC_WS_URL": "ws://192.168.1.10:4001/ws",
+        "EXPO_PUBLIC_CC_URL": "http://192.168.1.10:4002"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_EDGE_SYNC_URL": "https://REPLACE-WITH-EDGE-SYNC.onrender.com",
+        "EXPO_PUBLIC_EDGE_SYNC_WS_URL": "wss://REPLACE-WITH-EDGE-SYNC.onrender.com/ws",
+        "EXPO_PUBLIC_CC_URL": "https://meshsync-cloud-api.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }

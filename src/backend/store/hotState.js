@@ -87,6 +87,30 @@ export const clearActiveSosIncidentId = () => storage.delete("active_sos_inciden
 // Responder registration state
 export const isRegistered = () => storage.getBoolean("is_registered") ?? false;
 export const getAssignedZoneId = () => storage.getString("assigned_zone_id") || null;
+export const getResponderToken = () => storage.getString("responder_token") || "";
+export const getResponderAuthorityUserId = () => storage.getString("responder_authority_user_id") || null;
+
+// Cloud sync watermark (last pulled/pushed HLC)
+export const getLastCloudSyncHlc = () => storage.getString("last_cloud_sync_hlc") || null;
+export const setLastCloudSyncHlc = (hlc) => storage.set("last_cloud_sync_hlc", hlc);
+
+// Last My Status codes — carried into SOS events so severity is derivable
+export function setLastStatus({ safety, water, injury, people }) {
+  storage.set("status_safety", safety ?? 0);
+  storage.set("status_water", water ?? 0);
+  storage.set("status_injury", injury ?? 0);
+  storage.set("status_people", people ?? 1);
+}
+export const getLastStatus = () => ({
+  safety: storage.getNumber("status_safety") ?? 0,
+  water: storage.getNumber("status_water") ?? 0,
+  injury: storage.getNumber("status_injury") ?? 0,
+  people: storage.getNumber("status_people") ?? 1,
+});
+
+// User-edited landmark, reused for SOS landmark_name
+export const setLandmark = (name) => storage.set("landmark", name);
+export const getLandmark = () => storage.getString("landmark") || null;
 
 export function registerAsResponder({ authority_user_id, assigned_zone_id, token }) {
   storage.set("is_registered", true);

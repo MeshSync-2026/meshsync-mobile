@@ -1,6 +1,6 @@
-import { startCloudSync, stopCloudSync } from "../cloudSync";
+import { startCloudSync, stopCloudSync, syncNow } from "../cloudSync";
 import { getStore } from "../store/eventStore";
-import { ingestBatch } from "../cloudApi";
+import { ingestBatch, pullEvents } from "../cloudApi";
 import NetInfo from "@react-native-community/netinfo";
 
 // Mock NetInfo
@@ -17,34 +17,42 @@ jest.mock("@react-native-community/netinfo", () => ({
 // Mock store
 const mockGetUnsynced = jest.fn();
 const mockMarkSynced = jest.fn();
+const mockInsert = jest.fn();
 jest.mock("../store/eventStore", () => ({
   getStore: () => ({
     getUnsynced: mockGetUnsynced,
     markSynced: mockMarkSynced,
+    insert: mockInsert,
   }),
 }));
 
 // Mock cloudApi
 jest.mock("../cloudApi", () => ({
   ingestBatch: jest.fn(),
+  pullEvents: jest.fn(),
 }));
 
 // Mock hotState
 jest.mock("../store/hotState", () => ({
   getNodeId: () => "sync-node-123",
+  getLastCloudSyncHlc: () => null,
+  setLastCloudSyncHlc: jest.fn(),
 }));
 
 describe("cloudSync Integration Manager", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     netInfoListener = null;
+    pullEvents.mockResolvedValue([]);
+    mockInsert.mockResolvedValue(true);
   });
 
-  test("startCloudSync should subscribe to NetInfo events", () => {
-    startCloudSync();
+  test("startCloudSync should subscribe to NetInfo events and return an unsubscribe function", () => {
+    const unsub = startCloudSync();
 
     expect(NetInfo.addEventListener).toHaveBeenCalledTimes(1);
     expect(netInfoListener).toBeInstanceOf(Function);
+    expect(typeof unsub).toBe("function");
   });
 
   test("stopCloudSync should unsubscribe from NetInfo events", () => {
@@ -57,17 +65,43 @@ describe("cloudSync Integration Manager", () => {
   });
 
   test("should attempt synchronization when network connection becomes active", async () => {
-    mockGetUnsynced.mockReturnValue([{ id: "evt-1" }, { id: "evt-2" }]);
-    ingestBatch.mockResolvedValue({ success: true });
+    mockGetUnsynced.mockResolvedValue([{ id: "evt-1" }, { id: "evt-2" }]);
+    ingestBatch.mockResolvedValue({
+      new_count: 2,
+      items: [
+        { row_id: "evt-1", outcome: "inserted" },
+        { row_id: "evt-2", outcome: "inserted" },
+      ],
+    });
 
     startCloudSync();
 
     // Trigger online state transition
     await netInfoListener({ isConnected: true });
+    await new Promise((r) => setImmediate(r));
 
     expect(mockGetUnsynced).toHaveBeenCalled();
-    expect(ingestBatch).toHaveBeenCalledWith([{ id: "evt-1" }, { id: "evt-2" }], "sync-node-123");
+    expect(ingestBatch).toHaveBeenCalledWith(
+      [{ id: "evt-1" }, { id: "evt-2" }],
+      "sync-node-123"
+    );
     expect(mockMarkSynced).toHaveBeenCalledWith(["evt-1", "evt-2"]);
+  });
+
+  test("should NOT mark rejected rows as synced (per-row acks)", async () => {
+    mockGetUnsynced.mockResolvedValue([{ id: "evt-1" }, { id: "evt-bad" }]);
+    ingestBatch.mockResolvedValue({
+      new_count: 1,
+      rejected_count: 1,
+      items: [
+        { row_id: "evt-1", outcome: "inserted" },
+        { row_id: "evt-bad", outcome: "rejected" },
+      ],
+    });
+
+    await syncNow();
+
+    expect(mockMarkSynced).toHaveBeenCalledWith(["evt-1"]);
   });
 
   test("should skip synchronization if isConnected is false", async () => {
@@ -80,28 +114,40 @@ describe("cloudSync Integration Manager", () => {
     expect(ingestBatch).not.toHaveBeenCalled();
   });
 
-  test("should skip synchronization if there are no unsynced events", async () => {
-    mockGetUnsynced.mockReturnValue([]);
+  test("should skip push if there are no unsynced events but still pull", async () => {
+    mockGetUnsynced.mockResolvedValue([]);
 
-    startCloudSync();
-
-    // Trigger online state transition
-    await netInfoListener({ isConnected: true });
+    await syncNow();
 
     expect(mockGetUnsynced).toHaveBeenCalled();
     expect(ingestBatch).not.toHaveBeenCalled();
+    expect(pullEvents).toHaveBeenCalled();
+  });
+
+  test("pull inserts received events into the store", async () => {
+    mockGetUnsynced.mockResolvedValue([]);
+    pullEvents.mockResolvedValue([
+      { id: "cloud-1", hlc_timestamp: "h1" },
+      { id: "cloud-2", hlc_timestamp: "h2" },
+    ]);
+
+    const result = await syncNow();
+
+    expect(mockInsert).toHaveBeenCalledTimes(2);
+    expect(result.received).toBe(2);
   });
 
   test("should handle ingestion failure gracefully and log an error", async () => {
-    mockGetUnsynced.mockReturnValue([{ id: "evt-1" }]);
+    mockGetUnsynced.mockResolvedValue([{ id: "evt-1" }]);
     ingestBatch.mockRejectedValue(new Error("Ingestion server down"));
-    
+
     const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     startCloudSync();
 
     // Trigger online transition
     await netInfoListener({ isConnected: true });
+    await new Promise((r) => setImmediate(r));
 
     expect(ingestBatch).toHaveBeenCalled();
     expect(mockMarkSynced).not.toHaveBeenCalled();

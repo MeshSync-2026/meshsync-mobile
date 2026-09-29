@@ -165,22 +165,21 @@ export function MeshSyncProvider({ children }) {
   }, []);
 
   /**
-   * Send Emergency SOS (Requires GPS Permission)
+   * Send Emergency SOS (Captures GPS coordinates if available, otherwise falls back to landmark / profile info)
    */
   const sendSOS = useCallback(async ({ landmarkName, victimName } = {}) => {
-    const loc = (await getCurrentLocation({ showAlertOnDenied: true })) || userLocation;
-    if (!loc) {
-      return { success: false, error: "Location permission required" };
+    const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
+    if (loc) {
+      setUserLocation(loc);
     }
-    setUserLocation(loc);
 
     const store = getStore();
     const resolvedVictim = victimName || userProfile?.fullName || userProfile?.name || "";
-    const landmark = landmarkName || (resolvedVictim ? `SOS: ${resolvedVictim}` : formatCoordinateLandmark(loc.latitude, loc.longitude));
+    const landmark = landmarkName || (loc ? (resolvedVictim ? `SOS: ${resolvedVictim}` : formatCoordinateLandmark(loc.latitude, loc.longitude)) : (resolvedVictim ? `SOS: ${resolvedVictim}` : (userProfile?.homeLandmark || userProfile?.landmark || "Emergency Assistance Needed")));
     
     const event = createSosEvent({
-      latitude: loc.latitude,
-      longitude: loc.longitude,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
       landmarkName: landmark,
       victimName: resolvedVictim,
     });
@@ -192,24 +191,23 @@ export function MeshSyncProvider({ children }) {
   }, [userLocation, userProfile, broadcastEvent]);
 
   /**
-   * Report a Hazard (Requires GPS Permission)
+   * Report a Hazard (Captures GPS coordinates if available, otherwise falls back to landmark / title / profile landmark)
    */
   const reportHazard = useCallback(async ({ categoryCode, title, details, severityLevel, landmarkName }) => {
-    const loc = (await getCurrentLocation({ showAlertOnDenied: true })) || userLocation;
-    if (!loc) {
-      return { success: false, error: "Location permission required" };
+    const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
+    if (loc) {
+      setUserLocation(loc);
     }
-    setUserLocation(loc);
 
     const store = getStore();
-    const landmark = landmarkName || title || formatCoordinateLandmark(loc.latitude, loc.longitude);
+    const landmark = landmarkName || title || (loc ? formatCoordinateLandmark(loc.latitude, loc.longitude) : (userProfile?.homeLandmark || userProfile?.landmark || "Hazard Reported"));
     const event = createHazardEvent({
       category_code: categoryCode,
       title: title || "",
       details: details || "",
       severity_level: severityLevel,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
       landmark_name: landmark,
     });
 
@@ -217,14 +215,17 @@ export function MeshSyncProvider({ children }) {
     await broadcastEvent(event);
 
     return { success: true, event };
-  }, [userLocation, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent]);
 
   /**
    * Submit Life Safety / Need Help status update
    */
   const updateMyStatus = useCallback(async ({ safetyCode, waterCode, injuryCode, peopleCount, landmarkName }) => {
-    const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation || { latitude: 0, longitude: 0 };
-    const landmark = landmarkName || (loc.latitude ? formatCoordinateLandmark(loc.latitude, loc.longitude) : "Status update");
+    const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
+    if (loc) {
+      setUserLocation(loc);
+    }
+    const landmark = landmarkName || (loc?.latitude ? formatCoordinateLandmark(loc.latitude, loc.longitude) : (userProfile?.homeLandmark || userProfile?.landmark || "Status update"));
 
     const store = getStore();
     const event = createStatusEvent({
@@ -232,8 +233,8 @@ export function MeshSyncProvider({ children }) {
       water_code: waterCode,
       injury_code: injuryCode,
       people_count: peopleCount,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
       landmark_name: landmark,
     });
 
@@ -241,7 +242,7 @@ export function MeshSyncProvider({ children }) {
     await broadcastEvent(event);
 
     return { success: true, event };
-  }, [userLocation, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent]);
 
   /**
    * Dispatch Responder En Route to an incident

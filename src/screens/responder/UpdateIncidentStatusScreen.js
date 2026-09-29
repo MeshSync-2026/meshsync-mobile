@@ -10,39 +10,38 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
 
-const STATUSES = [
-  {
-    id: 'active',
-    label: 'ACTIVE',
-    description: 'Incident is waiting for responder action.',
-    icon: 'warning',
-  },
-  {
-    id: 'responding',
-    label: 'RESPONDING',
-    description: 'A responder is currently handling this incident.',
-    icon: 'directions-run',
-  },
-  {
-    id: 'resolved',
-    label: 'RESOLVED',
-    description: 'The incident has been successfully handled.',
-    icon: 'check-circle',
-  },
-];
+export default function UpdateIncidentStatusScreen({ route, navigation }) {
+  const { incident = {}, mesh = {} } = route.params || {};
 
-export default function UpdateIncidentStatusScreen({
-  route,
-  navigation,
-}) {
-  const { incident, mesh } = route.params;
-  const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+  const { colors, spacing, radius, typography, isDark, toggleScheme } =
+    useTheme();
 
   const [selectedStatus, setSelectedStatus] = useState(
-    incident.status || 'active'
+    incident.status || 'EN ROUTE'
   );
 
-  const saveStatus = () => {
+  const statuses = [
+    {
+      id: 'EN ROUTE',
+      label: 'En Route',
+      icon: 'directions-car',
+      description: 'I am travelling to the incident location.',
+    },
+    {
+      id: 'ARRIVED',
+      label: 'Arrived',
+      icon: 'location-on',
+      description: 'I have reached the incident location.',
+    },
+    {
+      id: 'RESOLVED',
+      label: 'Resolved',
+      icon: 'check-circle',
+      description: 'The incident has been handled.',
+    },
+  ];
+
+  const handleSave = () => {
     navigation.navigate('IncidentDetails', {
       incident: {
         ...incident,
@@ -60,6 +59,7 @@ export default function UpdateIncidentStatusScreen({
       ]}
       edges={['top', 'bottom']}
     >
+      {/* Header */}
       <View
         style={[
           styles.header,
@@ -96,17 +96,25 @@ export default function UpdateIncidentStatusScreen({
               { color: colors.onSurfaceVariant },
             ]}
           >
-            {incident.id}
+            {incident.id || 'Incident'}
           </Text>
         </View>
 
         <Pressable
           onPress={toggleScheme}
-          style={[styles.iconBtn, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
-          accessibilityRole="button"
-          accessibilityLabel="Toggle theme"
+          style={[
+            styles.iconButton,
+            {
+              backgroundColor: colors.surfaceContainerLowest,
+              borderColor: colors.outlineVariant,
+            },
+          ]}
         >
-          <MaterialIcons name={isDark ? 'light-mode' : 'dark-mode'} size={22} color={colors.onSurface} />
+          <MaterialIcons
+            name={isDark ? 'light-mode' : 'dark-mode'}
+            size={22}
+            color={colors.onSurface}
+          />
         </Pressable>
       </View>
 
@@ -115,29 +123,9 @@ export default function UpdateIncidentStatusScreen({
           paddingHorizontal: spacing.marginMobile,
           paddingTop: spacing.lg,
           paddingBottom: spacing.xl,
-          gap: spacing.md,
         }}
       >
-        <View style={{ gap: spacing.xs }}>
-          <Text
-            style={[
-              typography.headlineLgMobile,
-              { color: colors.onSurface },
-            ]}
-          >
-            Incident status
-          </Text>
-
-          <Text
-            style={[
-              typography.bodyMd,
-              { color: colors.onSurfaceVariant },
-            ]}
-          >
-            Update the current response state for this incident.
-          </Text>
-        </View>
-
+        {/* Incident summary */}
         <View
           style={[
             styles.card,
@@ -151,16 +139,28 @@ export default function UpdateIncidentStatusScreen({
         >
           <Text
             style={[
-              typography.titleLg,
-              { color: colors.onSurface },
+              typography.labelMd,
+              { color: colors.onSurfaceVariant },
             ]}
           >
-            {incident.title}
+            INCIDENT
           </Text>
 
-          <View style={styles.infoRow}>
+          <Text
+            style={[
+              typography.headlineLgMobile,
+              {
+                color: colors.onSurface,
+                marginTop: spacing.xs,
+              },
+            ]}
+          >
+            {incident.title || incident.type || 'Incident'}
+          </Text>
+
+          <View style={styles.locationRow}>
             <MaterialIcons
-              name="hub"
+              name="location-on"
               size={20}
               color={colors.onSurfaceVariant}
             />
@@ -168,108 +168,177 @@ export default function UpdateIncidentStatusScreen({
             <Text
               style={[
                 typography.bodyMd,
-                { color: colors.onSurfaceVariant },
+                {
+                  color: colors.onSurfaceVariant,
+                  flex: 1,
+                },
               ]}
             >
-              {mesh.name} · {mesh.id}
+              {incident.location || 'Unknown location'}
             </Text>
           </View>
         </View>
 
-        <View style={{ gap: spacing.sm }}>
-          <Text
-            style={[
-              typography.labelMd,
-              { color: colors.onSurfaceVariant },
-            ]}
-          >
-            SELECT STATUS
-          </Text>
+        {/* Status selection */}
+        <Text
+          style={[
+            typography.titleLg,
+            {
+              color: colors.onSurface,
+              marginTop: spacing.lg,
+              marginBottom: spacing.sm,
+            },
+          ]}
+        >
+          Select current status
+        </Text>
 
-          {STATUSES.map((status) => {
-            const selected = selectedStatus === status.id;
+        {statuses.map((status) => {
+          const isSelected = selectedStatus === status.id;
 
-            return (
-              <Pressable
-                key={status.id}
-                onPress={() => setSelectedStatus(status.id)}
+          return (
+            <Pressable
+              key={status.id}
+              onPress={() => setSelectedStatus(status.id)}
+              style={[
+                styles.statusCard,
+                {
+                  backgroundColor: isSelected
+                    ? colors.surfaceContainerHigh
+                    : colors.surfaceContainerLowest,
+                  borderColor: isSelected
+                    ? colors.onSurface
+                    : colors.outlineVariant,
+                  borderRadius: radius.xl,
+                },
+              ]}
+            >
+              <View
                 style={[
-                  styles.statusCard,
+                  styles.statusIcon,
                   {
-                    backgroundColor: colors.surfaceContainerLowest,
-                    borderColor: selected
+                    backgroundColor: isSelected
                       ? colors.onSurface
-                      : colors.outlineVariant,
-                    borderRadius: radius.xl,
-                    padding: spacing.md,
+                      : colors.surfaceContainerHigh,
                   },
                 ]}
               >
-                <View
-                  style={[
-                    styles.radio,
-                    {
-                      borderColor: selected
-                        ? colors.onSurface
-                        : colors.outline,
-                    },
-                  ]}
-                >
-                  {selected && (
-                    <View
-                      style={[
-                        styles.radioInner,
-                        {
-                          backgroundColor: colors.onSurface,
-                        },
-                      ]}
-                    />
-                  )}
-                </View>
-
                 <MaterialIcons
                   name={status.icon}
                   size={24}
-                  color={colors.onSurface}
+                  color={
+                    isSelected
+                      ? colors.background
+                      : colors.onSurface
+                  }
                 />
+              </View>
 
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      typography.titleLg,
-                      { color: colors.onSurface },
-                    ]}
-                  >
-                    {status.label}
-                  </Text>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    typography.titleLg,
+                    { color: colors.onSurface },
+                  ]}
+                >
+                  {status.label}
+                </Text>
 
-                  <Text
+                <Text
+                  style={[
+                    typography.bodyMd,
+                    {
+                      color: colors.onSurfaceVariant,
+                      marginTop: 4,
+                    },
+                  ]}
+                >
+                  {status.description}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.radioOuter,
+                  {
+                    borderColor: isSelected
+                      ? colors.onSurface
+                      : colors.outline,
+                  },
+                ]}
+              >
+                {isSelected && (
+                  <View
                     style={[
-                      typography.bodyMd,
-                      { color: colors.onSurfaceVariant },
+                      styles.radioInner,
+                      {
+                        backgroundColor: colors.onSurface,
+                      },
                     ]}
-                  >
-                    {status.description}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
+                  />
+                )}
+              </View>
+            </Pressable>
+          );
+        })}
+
+        {/* Offline notice */}
+        <View
+          style={[
+            styles.offlineCard,
+            {
+              backgroundColor: colors.surfaceContainerLowest,
+              borderColor: colors.outlineVariant,
+              borderRadius: radius.xl,
+            },
+          ]}
+        >
+          <MaterialIcons
+            name="cloud-off"
+            size={22}
+            color={colors.onSurface}
+          />
+
+          <View style={{ flex: 1 }}>
+            <Text
+              style={[
+                typography.titleLg,
+                { color: colors.onSurface },
+              ]}
+            >
+              Offline update
+            </Text>
+
+            <Text
+              style={[
+                typography.bodyMd,
+                {
+                  color: colors.onSurfaceVariant,
+                  marginTop: 3,
+                },
+              ]}
+            >
+              Your status can be recorded while offline and
+              synchronized with the mesh later.
+            </Text>
+          </View>
         </View>
 
+        {/* Save button */}
         <Pressable
-          onPress={saveStatus}
+          onPress={handleSave}
           style={[
             styles.saveButton,
             {
               backgroundColor: colors.onSurface,
               borderRadius: radius.md,
+              marginTop: spacing.lg,
             },
           ]}
         >
           <MaterialIcons
-            name="save"
-            size={22}
+            name="check"
+            size={23}
             color={colors.background}
           />
 
@@ -280,6 +349,28 @@ export default function UpdateIncidentStatusScreen({
             ]}
           >
             Save Status
+          </Text>
+        </Pressable>
+
+        {/* Cancel */}
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={[
+            styles.cancelButton,
+            {
+              borderColor: colors.outline,
+              borderRadius: radius.md,
+              marginTop: spacing.sm,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              typography.titleLg,
+              { color: colors.onSurface },
+            ]}
+          >
+            Cancel
           </Text>
         </Pressable>
       </ScrollView>
@@ -307,7 +398,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  iconBtn: {
+  iconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -318,27 +409,37 @@ const styles = StyleSheet.create({
 
   card: {
     borderWidth: 1,
-    gap: 12,
   },
 
-  infoRow: {
+  locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginTop: 14,
   },
 
   statusCard: {
-    minHeight: 82,
+    minHeight: 96,
     borderWidth: 1,
+    marginBottom: 12,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
 
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  statusIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -350,11 +451,28 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
 
+  offlineCard: {
+    minHeight: 82,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
   saveButton: {
-    minHeight: 52,
+    minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
+  },
+
+  cancelButton: {
+    minHeight: 52,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

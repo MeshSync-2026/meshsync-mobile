@@ -1,20 +1,25 @@
 import React, { useEffect, useState } from 'react';
+
 import {
   NavigationContainer,
   DefaultTheme,
   DarkTheme,
 } from '@react-navigation/native';
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../theme/ThemeContext';
-import { getActiveRole, ROLE, initHotState } from '../backend/store/hotState';
 
 import OnboardingScreen from '../screens/OnboardingScreen';
 import BottomTabs from './BottomTabs';
+
 import ReportHazardScreen from '../screens/ReportHazardScreen';
 import MyStatusScreen from '../screens/MyStatusScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+
+import RoleSelectionScreen from '../screens/RoleSelectionScreen';
 
 import ResponderNavigator from './ResponderNavigator';
 
@@ -27,29 +32,37 @@ export default function RootNavigator() {
 
   const [initialRoute, setInitialRoute] = useState(null);
 
-  /*
-   * Check whether the user has already completed onboarding and their active role.
-   */
   useEffect(() => {
-    initHotState();
     const checkProfile = async () => {
       try {
-        const storedProfile = await AsyncStorage.getItem(
-          PROFILE_STORAGE_KEY
-        );
+        const storedProfile =
+          await AsyncStorage.getItem(
+            PROFILE_STORAGE_KEY
+          );
+
+        /*
+         * No profile means the user
+         * needs to complete onboarding.
+         */
 
         if (!storedProfile) {
           setInitialRoute('Onboarding');
           return;
         }
-        setInitialRoute(getActiveRole() === ROLE.RESPONDER ? 'Responder' : 'Main');
+
+        /*
+         * Profile exists.
+         * Let the user choose their role.
+         */
+
+        setInitialRoute('RoleSelection');
+
       } catch (error) {
         console.error(
           'Failed to check saved profile:',
           error
         );
 
-        // If something goes wrong, safely show onboarding
         setInitialRoute('Onboarding');
       }
     };
@@ -58,16 +71,21 @@ export default function RootNavigator() {
   }, []);
 
   /*
-   * Wait until AsyncStorage check is complete.
+   * Wait until profile check finishes.
    */
+
   if (!initialRoute) {
     return null;
   }
 
   const navTheme = {
     ...(isDark ? DarkTheme : DefaultTheme),
+
     colors: {
-      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+      ...(isDark
+        ? DarkTheme.colors
+        : DefaultTheme.colors),
+
       background: colors.background,
       card: colors.background,
       text: colors.onSurface,
@@ -84,9 +102,15 @@ export default function RootNavigator() {
           headerShown: false,
         }}
       >
+
         <Stack.Screen
           name="Onboarding"
           component={OnboardingScreen}
+        />
+
+        <Stack.Screen
+          name="RoleSelection"
+          component={RoleSelectionScreen}
         />
 
         <Stack.Screen
@@ -119,6 +143,7 @@ export default function RootNavigator() {
           name="Profile"
           component={ProfileScreen}
         />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

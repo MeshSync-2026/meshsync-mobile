@@ -11,7 +11,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
 import { profile } from '../../data/mockData';
-import { setActiveRole, ROLE, deregisterResponder } from '../../backend/store/hotState';
 
 const MOCK_MESHES = [
   {
@@ -29,7 +28,14 @@ const MOCK_MESHES = [
 ];
 
 export default function AssignedMeshesScreen({ navigation }) {
-  const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
+  const {
+    colors,
+    spacing,
+    radius,
+    typography,
+    isDark,
+    toggleScheme,
+  } = useTheme();
 
   const [isOnDuty, setIsOnDuty] = useState(true);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
@@ -44,6 +50,7 @@ export default function AssignedMeshesScreen({ navigation }) {
       ]}
       edges={['top', 'bottom']}
     >
+      {/* HEADER */}
       <View
         style={[
           styles.header,
@@ -78,24 +85,47 @@ export default function AssignedMeshesScreen({ navigation }) {
         </View>
 
         <View style={styles.headerRight}>
+          {/* PROFILE BUTTON */}
           <Pressable
             onPress={() => setIsProfileVisible(true)}
-            style={[styles.iconBtn, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+            style={[
+              styles.iconBtn,
+              {
+                borderColor: colors.outlineVariant,
+                backgroundColor: colors.surfaceContainerLowest,
+              },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="View Profile"
           >
-            <MaterialIcons name="account-circle" size={22} color={colors.onSurface} />
+            <MaterialIcons
+              name="account-circle"
+              size={22}
+              color={colors.onSurface}
+            />
           </Pressable>
 
+          {/* THEME BUTTON */}
           <Pressable
             onPress={toggleScheme}
-            style={[styles.iconBtn, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+            style={[
+              styles.iconBtn,
+              {
+                borderColor: colors.outlineVariant,
+                backgroundColor: colors.surfaceContainerLowest,
+              },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Toggle theme"
           >
-            <MaterialIcons name={isDark ? 'light-mode' : 'dark-mode'} size={22} color={colors.onSurface} />
+            <MaterialIcons
+              name={isDark ? 'light-mode' : 'dark-mode'}
+              size={22}
+              color={colors.onSurface}
+            />
           </Pressable>
 
+          {/* DUTY STATUS */}
           <Pressable
             onPress={() => setIsOnDuty((current) => !current)}
             style={({ pressed }) => [
@@ -136,6 +166,7 @@ export default function AssignedMeshesScreen({ navigation }) {
         </View>
       </View>
 
+      {/* CONTENT */}
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: spacing.marginMobile,
@@ -144,6 +175,7 @@ export default function AssignedMeshesScreen({ navigation }) {
           gap: spacing.md,
         }}
       >
+        {/* TITLE */}
         <View style={{ gap: spacing.xs }}>
           <Text
             style={[
@@ -170,6 +202,7 @@ export default function AssignedMeshesScreen({ navigation }) {
           </Text>
         </View>
 
+        {/* OFF DUTY MESSAGE */}
         {!isOnDuty && (
           <View
             style={[
@@ -213,13 +246,14 @@ export default function AssignedMeshesScreen({ navigation }) {
                   },
                 ]}
               >
-                You are currently off duty. Turn on duty to access and manage
-                incidents assigned to your meshes.
+                You are currently off duty. Turn on duty to access and
+                manage incidents assigned to your meshes.
               </Text>
             </View>
           </View>
         )}
 
+        {/* MESHES */}
         {MOCK_MESHES.map((mesh) => (
           <Pressable
             key={mesh.id}
@@ -239,7 +273,6 @@ export default function AssignedMeshesScreen({ navigation }) {
                 borderRadius: radius.xl,
                 padding: spacing.md,
 
-                // Disabled when off duty
                 opacity: !isOnDuty
                   ? 0.45
                   : pressed
@@ -248,6 +281,7 @@ export default function AssignedMeshesScreen({ navigation }) {
               },
             ]}
           >
+            {/* MESH HEADER */}
             <View style={styles.meshHeader}>
               <View
                 style={{
@@ -285,6 +319,7 @@ export default function AssignedMeshesScreen({ navigation }) {
               />
             </View>
 
+            {/* DIVIDER */}
             <View
               style={[
                 styles.divider,
@@ -294,6 +329,7 @@ export default function AssignedMeshesScreen({ navigation }) {
               ]}
             />
 
+            {/* STATS */}
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <Text
@@ -347,101 +383,313 @@ export default function AssignedMeshesScreen({ navigation }) {
         ))}
       </ScrollView>
 
+      {/* PROFILE MODAL */}
       <Modal
         visible={isProfileVisible}
-        transparent={true}
+        transparent
         animationType="fade"
         onRequestClose={() => setIsProfileVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, borderRadius: radius.xl }]}>
-            
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.surfaceContainerLow,
+                borderColor: colors.outlineVariant,
+                borderRadius: radius.xl,
+              },
+            ]}
+          >
+            {/* MODAL HEADER */}
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderTitle}>
-                <MaterialIcons name="badge" size={22} color={colors.primary} />
-                <Text style={[typography.headlineMd, { color: colors.onSurface }]}>Responder Profile</Text>
+                <MaterialIcons
+                  name="badge"
+                  size={22}
+                  color={colors.primary}
+                />
+
+                <Text
+                  style={[
+                    typography.headlineMd,
+                    {
+                      color: colors.onSurface,
+                    },
+                  ]}
+                >
+                  Responder Profile
+                </Text>
               </View>
+
               <Pressable
                 onPress={() => setIsProfileVisible(false)}
-                style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.closeBtn,
+                  pressed && { opacity: 0.7 },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Close"
               >
-                <MaterialIcons name="close" size={20} color={colors.onSurfaceVariant} />
+                <MaterialIcons
+                  name="close"
+                  size={20}
+                  color={colors.onSurfaceVariant}
+                />
               </Pressable>
             </View>
 
+            {/* PROFILE SUMMARY */}
             <View style={styles.modalInfoSummary}>
-              <View style={[styles.avatar, { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant }]}>
-                <MaterialIcons name="person" size={32} color={colors.onSurfaceVariant} />
+              <View
+                style={[
+                  styles.avatar,
+                  {
+                    backgroundColor: colors.surfaceVariant,
+                    borderColor: colors.outlineVariant,
+                  },
+                ]}
+              >
+                <MaterialIcons
+                  name="person"
+                  size={32}
+                  color={colors.onSurfaceVariant}
+                />
               </View>
+
               <View>
-                <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{profile.name}</Text>
-                <View style={[styles.roleBadge, { backgroundColor: colors.primary }]}>
-                  <Text style={[typography.labelMd, { color: colors.onPrimary, fontWeight: '700' }]}>AUTHORIZED RESPONDER</Text>
+                <Text
+                  style={[
+                    typography.headlineLgMobile,
+                    {
+                      color: colors.onSurface,
+                    },
+                  ]}
+                >
+                  {profile.name}
+                </Text>
+
+                <View
+                  style={[
+                    styles.roleBadge,
+                    {
+                      backgroundColor: colors.primary,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typography.labelMd,
+                      {
+                        color: colors.onPrimary,
+                        fontWeight: '700',
+                      },
+                    ]}
+                  >
+                    AUTHORIZED RESPONDER
+                  </Text>
                 </View>
               </View>
             </View>
 
-            <View style={[styles.detailsSection, { borderColor: colors.outlineVariant }]}>
+            {/* PROFILE DETAILS */}
+            <View
+              style={[
+                styles.detailsSection,
+                {
+                  borderColor: colors.outlineVariant,
+                },
+              ]}
+            >
               <View style={styles.detailRow}>
-                <MaterialIcons name="person-outline" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
+                <MaterialIcons
+                  name="person-outline"
+                  size={18}
+                  color={colors.onSurfaceVariant}
+                  style={styles.detailIcon}
+                />
+
                 <View>
-                  <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Full Name</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.fullName}</Text>
+                  <Text
+                    style={[
+                      typography.labelMd,
+                      {
+                        color: colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    Full Name
+                  </Text>
+
+                  <Text
+                    style={[
+                      typography.bodyMd,
+                      {
+                        color: colors.onSurface,
+                      },
+                    ]}
+                  >
+                    {profile.fullName}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="credit-card" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
+                <MaterialIcons
+                  name="credit-card"
+                  size={18}
+                  color={colors.onSurfaceVariant}
+                  style={styles.detailIcon}
+                />
+
                 <View>
-                  <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>NIC Number</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.nic}</Text>
+                  <Text
+                    style={[
+                      typography.labelMd,
+                      {
+                        color: colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    NIC Number
+                  </Text>
+
+                  <Text
+                    style={[
+                      typography.bodyMd,
+                      {
+                        color: colors.onSurface,
+                      },
+                    ]}
+                  >
+                    {profile.nic}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="phone" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
+                <MaterialIcons
+                  name="phone"
+                  size={18}
+                  color={colors.onSurfaceVariant}
+                  style={styles.detailIcon}
+                />
+
                 <View>
-                  <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Phone Number</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.phone}</Text>
+                  <Text
+                    style={[
+                      typography.labelMd,
+                      {
+                        color: colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    Phone Number
+                  </Text>
+
+                  <Text
+                    style={[
+                      typography.bodyMd,
+                      {
+                        color: colors.onSurface,
+                      },
+                    ]}
+                  >
+                    {profile.phone}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="home" size={18} color={colors.onSurfaceVariant} style={styles.detailIcon} />
+                <MaterialIcons
+                  name="home"
+                  size={18}
+                  color={colors.onSurfaceVariant}
+                  style={styles.detailIcon}
+                />
+
                 <View>
-                  <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Saved Home</Text>
-                  <Text style={[typography.bodyMd, { color: colors.onSurface }]}>{profile.homeLocation}</Text>
+                  <Text
+                    style={[
+                      typography.labelMd,
+                      {
+                        color: colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    Saved Home
+                  </Text>
+
+                  <Text
+                    style={[
+                      typography.bodyMd,
+                      {
+                        color: colors.onSurface,
+                      },
+                    ]}
+                  >
+                    {profile.homeLocation}
+                  </Text>
                 </View>
               </View>
             </View>
 
+            {/* ACTIONS */}
             <View style={styles.actionSection}>
-              <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, textAlign: 'center', marginBottom: 12 }]}>
-                Switch to Citizen (Civilian) role to view local hazard reports and request community assistance.
+              <Text
+                style={[
+                  typography.bodyMd,
+                  {
+                    color: colors.onSurfaceVariant,
+                    textAlign: 'center',
+                    marginBottom: 12,
+                  },
+                ]}
+              >
+                Switch to Citizen (Civilian) role to view local hazard
+                reports and request community assistance.
               </Text>
+
+              {/* SWITCH TO CITIZEN */}
               <Pressable
                 onPress={() => {
-                  setActiveRole(ROLE.CIVILIAN);
                   setIsProfileVisible(false);
                   navigation.getParent()?.navigate('Main');
                 }}
                 style={({ pressed }) => [
                   styles.switchRoleBtn,
-                  { backgroundColor: colors.primary, borderRadius: radius.md, opacity: pressed ? 0.9 : 1 }
+                  {
+                    backgroundColor: colors.primary,
+                    borderRadius: radius.md,
+                    opacity: pressed ? 0.9 : 1,
+                  },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel="Switch role to Citizen"
               >
-                <MaterialIcons name="swap-horiz" size={20} color={colors.onPrimary} />
-                <Text style={[typography.labelLg, { color: colors.onPrimary }]}>Switch to Citizen Mode</Text>
+                <MaterialIcons
+                  name="swap-horiz"
+                  size={20}
+                  color={colors.onPrimary}
+                />
+
+                <Text
+                  style={[
+                    typography.labelLg,
+                    {
+                      color: colors.onPrimary,
+                    },
+                  ]}
+                >
+                  Switch to Citizen Mode
+                </Text>
               </Pressable>
 
+              {/* LOG OUT */}
               <Pressable
                 onPress={() => {
-                  deregisterResponder();
                   setIsProfileVisible(false);
+
                   navigation.reset({
                     index: 0,
                     routes: [{ name: 'ResponderLogin' }],
@@ -449,16 +697,34 @@ export default function AssignedMeshesScreen({ navigation }) {
                 }}
                 style={({ pressed }) => [
                   styles.switchRoleBtn,
-                  { backgroundColor: colors.error, borderRadius: radius.md, opacity: pressed ? 0.9 : 1, marginTop: 12 }
+                  {
+                    backgroundColor: colors.error,
+                    borderRadius: radius.md,
+                    opacity: pressed ? 0.9 : 1,
+                    marginTop: 12,
+                  },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel="Log out of Responder account"
               >
-                <MaterialIcons name="logout" size={20} color={colors.onError} />
-                <Text style={[typography.labelLg, { color: colors.onError }]}>Log Out (End of Shift)</Text>
+                <MaterialIcons
+                  name="logout"
+                  size={20}
+                  color={colors.onError}
+                />
+
+                <Text
+                  style={[
+                    typography.labelLg,
+                    {
+                      color: colors.onError,
+                    },
+                  ]}
+                >
+                  Log Out (End of Shift)
+                </Text>
               </Pressable>
             </View>
-
           </View>
         </View>
       </Modal>
@@ -557,7 +823,10 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOpacity: 0.15,
     shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     elevation: 5,
   },
 

@@ -97,6 +97,11 @@ export class BleTransport extends MeshTransport {
       const allEvents = await getStore().getAll();
       const payloadStr = JSON.stringify(allEvents);
       this.peerDiscovery.updateLocalPayload(payloadStr);
+
+      // Actively push newly broadcasted events to all known active peers immediately
+      if (typeof this.peerDiscovery.syncWithActivePeers === "function") {
+        this.peerDiscovery.syncWithActivePeers().catch(() => {});
+      }
     } catch (err) {
       console.error("[BLE Transport] Error updating BLE payload:", err);
     }

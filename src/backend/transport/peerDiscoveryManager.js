@@ -221,8 +221,12 @@ export class PeerDiscoveryManager {
 
       if (!PeripheralModule) return;
 
-      const advName = `MeshSync-${this.nodeId || "node"}`;
-      PeripheralModule.setDeviceName(advName);
+      const shortId = (this.nodeId || "node").slice(-6);
+      const advName = `MeshSync-${shortId}`;
+      try {
+        await PeripheralModule.setDeviceName(advName);
+      } catch (_) {}
+
       this.peripheral = new PeripheralModule();
 
       this.peripheral.on("ready", async () => {
@@ -248,7 +252,10 @@ export class PeerDiscoveryManager {
 
           if (!this.active) return;
           await this._syncLocalPayloadToGatt();
-          await this.peripheral.startAdvertising();
+          await this.peripheral.startAdvertising(
+            { [SERVICE_UUID]: "" },
+            { includeDeviceName: true, connectable: true }
+          );
           if (this.active) {
             console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
           }
@@ -261,22 +268,50 @@ export class PeerDiscoveryManager {
 
       // Handle incoming writes from connected Central peers
       if (typeof this.peripheral.on === "function") {
-        this.peripheral.on("characteristicWrite", (charUuid, base64Value, peerAddress) => {
-          if (charUuid && charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase()) {
-            try {
-              const chunkStr = Buffer.from(base64Value, "base64").toString("utf-8");
-              const fullPayload = this.reassembler.feedChunk(chunkStr);
-              if (fullPayload && this.onPayloadReceived) {
-                this.onPayloadReceived(peerAddress || "unknown-peer", fullPayload);
-              }
-            } catch (err) {
-              console.error("[PeerDiscovery] Error processing incoming GATT write:", err);
+        const onWriteHandler = (arg1, arg2, arg3) => {
+          try {
+            // react-native-multi-ble-peripheral emits:
+            // 'write', { device, service, characteristic, offset, value }
+            let charUuid, base64Val, peerAddr;
+            if (arg1 && typeof arg1 === "object") {
+              charUuid = arg1.characteristic;
+              base64Val = arg1.value;
+              peerAddr = arg1.device;
+            } else {
+              charUuid = arg1;
+              base64Val = arg2;
+              peerAddr = arg3;
             }
+
+            if (charUuid && charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase()) {
+              if (base64Val) {
+                const chunkStr = Buffer.from(base64Val, "base64").toString("utf-8");
+                const fullPayload = this.reassembler.feedChunk(chunkStr);
+                if (fullPayload && this.onPayloadReceived) {
+                  this.onPayloadReceived(peerAddr || "unknown-peer", fullPayload);
+                }
+              }
+            }
+          } catch (err) {
+            console.error("[PeerDiscovery] Error processing incoming GATT write:", err);
           }
-        });
+        };
+
+        this.peripheral.on("write", onWriteHandler);
+        this.peripheral.on("characteristicWrite", onWriteHandler);
       }
     } catch (err) {
       console.warn("[PeerDiscovery] react-native-multi-ble-peripheral native module not available:", err.message);
+    }
+  }
+
+  async syncWithActivePeers() {
+    if (!this.active || this.discoveredDevices.size === 0) return;
+    const now = Date.now();
+    for (const [peerId, record] of this.discoveredDevices.entries()) {
+      if (now - record.lastSeen < 60000 && !this.connectingPeers.has(peerId)) {
+        this._connectAndSync(record.device, peerId).catch(() => {});
+      }
     }
   }
 
@@ -292,15 +327,22 @@ export class PeerDiscoveryManager {
           }
 
           const devName =
-            device?.name && device.name.startsWith("MeshSync-")
+            device?.name && (device.name.startsWith("MeshSync") || device.name.startsWith("MS-"))
               ? device.name
-              : device?.localName && device.localName.startsWith("MeshSync-")
+              : device?.localName && (device.localName.startsWith("MeshSync") || device.localName.startsWith("MS-"))
               ? device.localName
               : null;
 
-          if (devName) {
-            const peerNodeId = devName.substring("MeshSync-".length).trim();
-            if (!peerNodeId || peerNodeId === this.nodeId) return; // Skip self
+          const hasMeshService =
+            device?.serviceUUIDs &&
+            device.serviceUUIDs.some(
+              (u) => u.toLowerCase() === SERVICE_UUID.toLowerCase()
+            );
+
+          if (devName || hasMeshService) {
+            let peerNodeId = devName ? devName.replace(/^(MeshSync-|MeshSync|MS-)/, "").trim() : null;
+            if (!peerNodeId) peerNodeId = device.id;
+            if (peerNodeId === this.nodeId || peerNodeId === this.nodeId.slice(-6)) return; // Skip self
 
             this.discoveredDevices.set(peerNodeId, { device, lastSeen: Date.now() });
 

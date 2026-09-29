@@ -48,6 +48,20 @@ export function MeshSyncProvider({ children }) {
   const bleTransportRef = useRef(null);
   const wsTransportRef = useRef(null);
 
+  const refreshEventCounts = useCallback(async () => {
+    try {
+      const store = getStore();
+      const allEvents = await store.getAll();
+      const activeNodeId = getNodeId();
+      const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === activeNodeId);
+      const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== activeNodeId);
+      setMyEvents(mine);
+      setRelayedCount(relayed.length);
+    } catch (err) {
+      console.error("[MeshSyncContext] Error fetching events:", err);
+    }
+  }, []);
+
   // Initialize transports and subscriptions on mount
   useEffect(() => {
     let isMounted = true;
@@ -60,9 +74,13 @@ export function MeshSyncProvider({ children }) {
 
     const setup = async () => {
       // 0. Ensure persistent hot state is hydrated before reading node identity
-      await hydrateHotState();
-      const currentNodeId = getNodeId();
+      try {
+        await hydrateHotState();
+      } catch (e) {
+        console.warn("[MeshSyncContext] hydrateHotState failed:", e);
+      }
 
+      const currentNodeId = getNodeId();
       if (!isMounted) return;
 
       setNodeIdState(currentNodeId);
@@ -77,21 +95,6 @@ export function MeshSyncProvider({ children }) {
       } catch (_) {}
 
       const store = getStore();
-
-      const refreshEventCounts = async () => {
-        try {
-          const allEvents = await store.getAll();
-          const activeNodeId = getNodeId();
-          const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === activeNodeId);
-          const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== activeNodeId);
-          if (isMounted) {
-            setMyEvents(mine);
-            setRelayedCount(relayed.length);
-          }
-        } catch (err) {
-          console.error("[MeshSyncContext] Error fetching events:", err);
-        }
-      };
 
       // 1. Initial state hydration
       try {
@@ -118,32 +121,72 @@ export function MeshSyncProvider({ children }) {
       });
 
       // 3. Initialize BLE and WebSocket transports with explicit Node ID
-      ble = new BleTransport(currentNodeId, getActiveRole());
-      ws = new WsTransport();
-      bleTransportRef.current = ble;
-      wsTransportRef.current = ws;
+      try {
+        ble = new BleTransport(currentNodeId, getActiveRole());
+        bleTransportRef.current = ble;
 
-      ble.start();
-      ws.start();
+        ble.onEventsReceived(() => {
+          if (!isMounted) return;
+          refreshEventCounts();
+          store.getProjection().then((p) => {
+            if (p && isMounted) {
+              setIncidents(p.incidents || []);
+              setResponders(p.responders || []);
+              setHistory(p.history || []);
+            }
+          }).catch(() => {});
+        });
+
+        ble.start();
+      } catch (bleErr) {
+        console.warn("[MeshSyncContext] BLE init error:", bleErr);
+      }
+
+      try {
+        ws = new WsTransport();
+        wsTransportRef.current = ws;
+
+        ws.onEventsReceived(() => {
+          if (!isMounted) return;
+          refreshEventCounts();
+          store.getProjection().then((p) => {
+            if (p && isMounted) {
+              setIncidents(p.incidents || []);
+              setResponders(p.responders || []);
+              setHistory(p.history || []);
+            }
+          }).catch(() => {});
+        });
+
+        ws.start();
+      } catch (wsErr) {
+        console.warn("[MeshSyncContext] WS init error:", wsErr);
+      }
 
       // 4. Track live peer counts
       peerInterval = setInterval(() => {
-        const blePeers = ble.getPeerCount ? ble.getPeerCount() : 0;
-        const wsPeers = ws.getPeerCount ? ws.getPeerCount() : 0;
+        const blePeers = ble && ble.getPeerCount ? ble.getPeerCount() : 0;
+        const wsPeers = ws && ws.getPeerCount ? ws.getPeerCount() : 0;
         if (isMounted) {
           setPeerCount(blePeers + wsPeers);
         }
       }, 3000);
 
       // 5. Start Cloud Sync listener
-      stopCloudSync = startCloudSync();
+      try {
+        stopCloudSync = startCloudSync();
+      } catch (csErr) {
+        console.warn("[MeshSyncContext] CloudSync error:", csErr);
+      }
 
       // 6. Monitor Internet connectivity
-      unsubscribeNet = NetInfo.addEventListener((state) => {
-        if (isMounted) {
-          setIsOnline(Boolean(state.isConnected));
-        }
-      });
+      try {
+        unsubscribeNet = NetInfo.addEventListener((state) => {
+          if (isMounted) {
+            setIsOnline(Boolean(state.isConnected));
+          }
+        });
+      } catch (_) {}
 
       // 7. Warm up GPS location without showing permission alert immediately
       getCurrentLocation({ showAlertOnDenied: false }).then((loc) => {
@@ -162,7 +205,7 @@ export function MeshSyncProvider({ children }) {
       if (ble) ble.stop();
       if (ws) ws.stop();
     };
-  }, []);
+  }, [refreshEventCounts]);
 
   /**
    * Refresh current device GPS coordinates (shows alert if permission denied)
@@ -214,10 +257,21 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
+    await refreshEventCounts();
+
+    try {
+      const proj = await store.getProjection();
+      if (proj) {
+        setIncidents(proj.incidents || []);
+        setResponders(proj.responders || []);
+        setHistory(proj.history || []);
+      }
+    } catch (_) {}
 
     return { success: true, event };
-  }, [userLocation, userProfile, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent, refreshEventCounts]);
 
   /**
    * Report a Hazard (Captures GPS coordinates if available, otherwise falls back to landmark / title / profile landmark)
@@ -241,10 +295,21 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
+    await refreshEventCounts();
+
+    try {
+      const proj = await store.getProjection();
+      if (proj) {
+        setIncidents(proj.incidents || []);
+        setResponders(proj.responders || []);
+        setHistory(proj.history || []);
+      }
+    } catch (_) {}
 
     return { success: true, event };
-  }, [userLocation, userProfile, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent, refreshEventCounts]);
 
   /**
    * Submit Life Safety / Need Help status update
@@ -268,10 +333,21 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
+    await refreshEventCounts();
+
+    try {
+      const proj = await store.getProjection();
+      if (proj) {
+        setIncidents(proj.incidents || []);
+        setResponders(proj.responders || []);
+        setHistory(proj.history || []);
+      }
+    } catch (_) {}
 
     return { success: true, event };
-  }, [userLocation, userProfile, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent, refreshEventCounts]);
 
   /**
    * Dispatch Responder En Route to an incident

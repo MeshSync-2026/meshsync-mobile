@@ -4,7 +4,10 @@ import { ingestBatch, pullEvents } from "./cloudApi";
 import { getNodeId, getLastCloudSyncHlc, setLastCloudSyncHlc } from "./store/hotState";
 import { sortByPriority } from "./shared/priority";
 
+const RETRY_INTERVAL_MS = 60 * 1000; // retry uploads every minute (Render cold starts, transient failures)
+
 let unsubscribe;
+let retryTimer;
 let syncing = false;
 
 export function startCloudSync() {
@@ -13,12 +16,19 @@ export function startCloudSync() {
       syncNow().catch((e) => console.log("[cloudSync] retry later:", e.message));
     }
   });
+  // Periodic retry: events whose upload failed (offline, cold start) still
+  // reach the cloud without waiting for the next connectivity flip.
+  retryTimer = setInterval(() => {
+    syncNow().catch((e) => console.log("[cloudSync] retry later:", e.message));
+  }, RETRY_INTERVAL_MS);
   return unsubscribe;
 }
 
 export function stopCloudSync() {
   unsubscribe?.();
   unsubscribe = undefined;
+  if (retryTimer) clearInterval(retryTimer);
+  retryTimer = null;
 }
 
 /**
@@ -67,12 +77,27 @@ async function pullFromCloud() {
   const events = await pullEvents(getLastCloudSyncHlc());
 
   let received = 0;
-  for (const evt of events) {
-    if (await store.insert(evt)) received++;
+  for (const raw of events) {
+    if (await store.insert(normalizeCloudEvent(raw))) received++;
   }
   if (events.length) advanceWatermark(events[events.length - 1].hlc_timestamp);
 
   return received;
+}
+
+/**
+ * The cloud serves Postgres-native types (bigint seq → string, timestamptz →
+ * ISO string). Normalize to what the local store expects, and mark pulled
+ * rows as already cloud-synced so they are never re-pushed (§11.3 grow-only).
+ */
+function normalizeCloudEvent(evt) {
+  return {
+    ...evt,
+    seq: typeof evt.seq === "number" ? evt.seq : parseInt(evt.seq, 10) || 0,
+    created_at:
+      typeof evt.created_at === "number" ? evt.created_at : Date.parse(evt.created_at) || 0,
+    is_cloud_synced: true,
+  };
 }
 
 function advanceWatermark(hlc) {

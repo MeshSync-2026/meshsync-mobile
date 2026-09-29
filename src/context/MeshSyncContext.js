@@ -13,6 +13,7 @@ import {
   getLastStatus,
   setLastStatus,
   getLandmark,
+  setLandmark,
   ROLE,
 } from "../backend/store/hotState";
 import { BleTransport } from "../backend/transport/bleTransport";
@@ -171,21 +172,29 @@ export function MeshSyncProvider({ children }) {
   }, [broadcastEvent]);
 
   /**
-   * Broadcast an event across all active transports and trigger cloud sync
+   * Broadcast an event across all active transports and trigger cloud sync.
+   * Each transport is isolated — one failing must never skip the others,
+   * and the opportunistic cloud upload always runs.
    */
   const broadcastEvent = useCallback(async (event) => {
-    try {
-      if (bleTransportRef.current) {
+    if (bleTransportRef.current) {
+      try {
         await bleTransportRef.current.sendEvents([event]);
+      } catch (err) {
+        console.error("[MeshSyncContext] BLE broadcast failed:", err);
       }
-      if (wsTransportRef.current) {
-        wsTransportRef.current.send([event]);
-      }
-      // Opportunistic upload
-      triggerCloudSync().catch(() => {});
-    } catch (err) {
-      console.error("[MeshSyncContext] Error broadcasting event:", err);
     }
+    if (wsTransportRef.current) {
+      try {
+        await wsTransportRef.current.sendEvents([event]);
+      } catch (err) {
+        console.error("[MeshSyncContext] WS broadcast failed:", err);
+      }
+    }
+    // Opportunistic upload — must run even if both transports failed
+    triggerCloudSync().catch((err) =>
+      console.log("[MeshSyncContext] cloud sync deferred:", err.message)
+    );
   }, []);
 
   /**

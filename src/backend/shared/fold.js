@@ -16,6 +16,7 @@ import {
   ACTION_TYPE,
   HEARTBEAT_INTERVAL_MS,
   CONFIDENCE_THRESHOLD_MS,
+  SEVERITY,
 } from "./enums.js";
 import { parseHlc, compareHlc } from "./hlc.js";
 
@@ -113,6 +114,7 @@ export function lwwFold(sortedEvents) {
       case EVENT_TYPE.SOS_CREATED: {
         // Create or update the incident projection
         const existing = incidents.get(incId) || {};
+        const severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity ?? SEVERITY.HIGH;
         incidents.set(incId, {
           ...existing,
           id: incId,
@@ -122,7 +124,8 @@ export function lwwFold(sortedEvents) {
           landmark_name: evt.landmark_name ?? evt.landmarkName ?? null,
           report_type_code: evt.report_type_code ?? evt.reportTypeCode,
           category_code: evt.category_code ?? evt.categoryCode ?? null,
-          severity_level: evt.severity_level,
+          severity_level: severityLevel,
+          severity: severityLevel,
           status_safety: evt.status_safety,
           people_count: evt.people_count,
           status_water: evt.status_water,
@@ -177,6 +180,7 @@ export function lwwFold(sortedEvents) {
       case EVENT_TYPE.STATUS_UPDATE: {
         let inc = incidents.get(incId);
         if (!inc) {
+          const severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity ?? SEVERITY.MEDIUM;
           inc = {
             id: incId,
             creator_node_id: evt.origin_node_id,
@@ -185,7 +189,8 @@ export function lwwFold(sortedEvents) {
             landmark_name: evt.landmark_name ?? evt.landmarkName ?? null,
             report_type_code: evt.report_type_code ?? evt.reportTypeCode ?? REPORT_TYPE.HAZARD,
             category_code: evt.category_code ?? evt.categoryCode ?? null,
-            severity_level: evt.severity_level ?? evt.severityLevel ?? SEVERITY.MEDIUM,
+            severity_level: severityLevel,
+            severity: severityLevel,
             status_safety: evt.status_safety ?? evt.statusSafety,
             people_count: evt.people_count ?? evt.peopleCount,
             status_water: evt.status_water ?? evt.statusWater,
@@ -203,7 +208,7 @@ export function lwwFold(sortedEvents) {
           // Update incident fields via LWW
           const reportTypeCode = evt.report_type_code ?? evt.reportTypeCode;
           const categoryCode = evt.category_code ?? evt.categoryCode;
-          const severityLevel = evt.severity_level ?? evt.severityLevel;
+          const severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity;
           const statusSafety = evt.status_safety ?? evt.statusSafety;
           const peopleCount = evt.people_count ?? evt.peopleCount;
           const statusWater = evt.status_water ?? evt.statusWater;
@@ -212,7 +217,10 @@ export function lwwFold(sortedEvents) {
 
           if (reportTypeCode != null) inc.report_type_code = reportTypeCode;
           if (categoryCode != null) inc.category_code = categoryCode;
-          if (severityLevel != null) inc.severity_level = severityLevel;
+          if (severityLevel != null) {
+            inc.severity_level = severityLevel;
+            inc.severity = severityLevel;
+          }
           if (statusSafety != null) inc.status_safety = statusSafety;
           if (peopleCount != null) inc.people_count = peopleCount;
           if (statusWater != null) inc.status_water = statusWater;

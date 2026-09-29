@@ -28,7 +28,7 @@ class EventStore {
         rec.landmarkName = evt.landmark_name ?? null;
         rec.reportTypeCode = evt.report_type_code ?? null;
         rec.categoryCode = evt.category_code ?? null;
-        rec.severityLevel = evt.severity_level ?? null;
+        rec.severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity ?? null;
         rec.statusSafety = evt.status_safety ?? null;
         rec.peopleCount = evt.people_count ?? null;
         rec.statusWater = evt.status_water ?? null;
@@ -79,6 +79,7 @@ class EventStore {
       report_type_code: r.reportTypeCode,
       category_code: r.categoryCode,
       severity_level: r.severityLevel,
+      severity: r.severityLevel,
       status_safety: r.statusSafety,
       people_count: r.peopleCount,
       status_water: r.statusWater,
@@ -108,6 +109,7 @@ class EventStore {
       report_type_code: r.reportTypeCode,
       category_code: r.categoryCode,
       severity_level: r.severityLevel,
+      severity: r.severityLevel,
       status_safety: r.statusSafety,
       people_count: r.peopleCount,
       status_water: r.statusWater,

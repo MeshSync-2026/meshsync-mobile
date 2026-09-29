@@ -48,11 +48,23 @@ describe("eventCreator Utilities", () => {
     // Verify landmark truncation to 30 characters
     expect(event.landmark_name).toBe("Main Building Ground Floor Roo");
     expect(event.landmark_name.length).toBe(30);
+    expect(event.severity_level).toBe(SEVERITY.HIGH);
+    expect(event.severity).toBe(SEVERITY.HIGH);
 
     // Verify against shared validateEvent
     const result = validateEvent(event);
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
+  });
+
+  test("createSosEvent should accept explicit severity / severityLevel / severity_level", () => {
+    const eventWithLevel = createSosEvent({ severityLevel: SEVERITY.VERY_HIGH });
+    expect(eventWithLevel.severity_level).toBe(SEVERITY.VERY_HIGH);
+    expect(eventWithLevel.severity).toBe(SEVERITY.VERY_HIGH);
+
+    const eventWithSev = createSosEvent({ severity: "low" });
+    expect(eventWithSev.severity_level).toBe(SEVERITY.LOW);
+    expect(eventWithSev.severity).toBe(SEVERITY.LOW);
   });
 
   test("createHazardEvent should map category and severity correctly", () => {
@@ -68,6 +80,7 @@ describe("eventCreator Utilities", () => {
     expect(event.report_type_code).toBe(REPORT_TYPE.HAZARD);
     expect(event.category_code).toBe(HAZARD_CATEGORY.FLOOD);
     expect(event.severity_level).toBe(SEVERITY.HIGH);
+    expect(event.severity).toBe(SEVERITY.HIGH);
     expect(event.landmark_name).toBe("Flash Flood Near River");
 
     const result = validateEvent(event);

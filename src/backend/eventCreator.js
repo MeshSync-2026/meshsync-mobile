@@ -24,6 +24,8 @@ export function createSosEvent({
   landmarkName,
   victimName,
   incidentId,
+  severity,
+  severity_level,
   severityLevel,
   statusSafety,
   statusWater,
@@ -39,11 +41,21 @@ export function createSosEvent({
 
   const rawLandmark = landmarkName || (victimName ? `SOS: ${victimName}` : "Emergency Assistance Needed");
 
+  let finalSeverity = SEVERITY.HIGH;
+  if (severity_level != null) finalSeverity = severity_level;
+  else if (severityLevel != null) finalSeverity = severityLevel;
+  else if (severity && typeof severity === "string") {
+    finalSeverity = SEVERITY[severity.toUpperCase()] ?? SEVERITY.HIGH;
+  } else if (typeof severity === "number") {
+    finalSeverity = severity;
+  }
+
   return {
     ...eventBase,
     actor_role_code: ACTOR_ROLE.VICTIM,
     report_type_code: REPORT_TYPE.SOS,
-    severity_level: severityLevel ?? null,
+    severity_level: finalSeverity,
+    severity: finalSeverity,
     status_safety: statusSafety ?? null,
     status_water: statusWater ?? null,
     status_injury: statusInjury ?? null,
@@ -108,6 +120,8 @@ export function createHazardEvent({
   else if (severityLevel != null) finalSeverity = severityLevel;
   else if (severity && typeof severity === "string") {
     finalSeverity = SEVERITY[severity.toUpperCase()] ?? SEVERITY.MEDIUM;
+  } else if (typeof severity === "number") {
+    finalSeverity = severity;
   }
 
   const landmark = landmark_name || landmarkName || title || "Hazard Reported";
@@ -118,6 +132,7 @@ export function createHazardEvent({
     report_type_code: REPORT_TYPE.HAZARD,
     category_code: finalCategory,
     severity_level: finalSeverity,
+    severity: finalSeverity,
     landmark_name: landmark.slice(0, 30),
     latitude,
     longitude,

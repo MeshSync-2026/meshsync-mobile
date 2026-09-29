@@ -200,7 +200,7 @@ export default function NearbyReportsScreen() {
               const statusWater = r.status_water ?? r.statusWater;
               const statusInjury = r.status_injury ?? r.statusInjury;
               const peopleCount = r.people_count ?? r.peopleCount ?? 1;
-              const severityLevel = r.severity_level ?? r.severityLevel;
+              const severityLevel = r.severity_level ?? r.severityLevel ?? r.severity;
               const landmarkName = r.landmark_name ?? r.landmarkName;
               const creatorNodeId = r.creator_node_id ?? r.creatorNodeId;
               const details = r.details || r.description;

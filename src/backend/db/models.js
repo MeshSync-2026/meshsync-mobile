@@ -24,6 +24,13 @@ export class MeshEvent extends Model {
   @field("hlc_timestamp") hlcTimestamp;
   @field("created_at_ms") createdAtMs;
   @field("is_cloud_synced") isCloudSynced;
+
+  get severity() {
+    return this.severityLevel;
+  }
+  set severity(val) {
+    this.severityLevel = val;
+  }
 }
 
 export class Incident extends Model {
@@ -46,6 +53,13 @@ export class Incident extends Model {
   @field("last_event_hlc") lastEventHlc;
   @field("created_at_ms") createdAtMs;
   @field("updated_at_ms") updatedAtMs;
+
+  get severity() {
+    return this.severityLevel;
+  }
+  set severity(val) {
+    this.severityLevel = val;
+  }
 }
 
 export class IncidentResponder extends Model {

@@ -83,8 +83,12 @@ export default function OnboardingScreen({ navigation }) {
       homeLandmark: landmark.trim(),
       role,
     };
-    AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile)).catch(() => {});
-    Alert.alert(t('onboarding.setupComplete'), t('onboarding.setupCompleteDesc'), [{ text: 'OK' }]);
+    AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+      .catch(() => {})
+      .finally(() => {
+        // Enter the app — Main tabs for civilian/civilian responder
+        navigation.replace('Main');
+      });
   };
 
   // ─── Step 0: Language ───

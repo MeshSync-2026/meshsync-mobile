@@ -13,6 +13,7 @@ import {
 
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../../theme/ThemeContext';
 import { useMeshSync } from '../../context/MeshSyncContext';
@@ -147,6 +148,25 @@ export default function ResponderLoginScreen({
         await clearResponderSession();
       }
 
+
+      /*
+       * Mark onboarding complete for authorized responders too —
+       * RootNavigator keys the initial route off this profile.
+       */
+
+      try {
+        const profile = {
+          name: result.user?.full_name || enteredId,
+          fullName: result.user?.full_name || 'Authorized Responder',
+          role: 'RESPONDER',
+        };
+        await AsyncStorage.setItem(
+          '@meshsync_profile',
+          JSON.stringify(profile)
+        );
+      } catch (profileErr) {
+        console.log('Profile save skipped:', profileErr?.message || profileErr);
+      }
 
       /*
        * Navigate to responder dashboard. When arriving from onboarding

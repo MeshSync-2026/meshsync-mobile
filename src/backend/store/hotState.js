@@ -54,7 +54,7 @@ if (Platform.OS === 'web') {
     const { MMKV } = require('react-native-mmkv');
     storage = new MMKV();
   } catch (e) {
-    console.warn('[hotState] MMKV unavailable — using in-memory storage (Expo Go preview)');
+    console.log('[hotState] MMKV unavailable — using in-memory storage (Expo Go preview)');
     storage = new WebStorageMock();
   }
 }

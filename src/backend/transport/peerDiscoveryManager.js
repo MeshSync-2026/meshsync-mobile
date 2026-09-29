@@ -165,9 +165,25 @@ export class PeerDiscoveryManager {
   async _syncLocalPayloadToGatt() {
     if (this.peripheral && this.active) {
       try {
-        const chunks = chunkPayload(this.localPayload);
-        const primaryPayload = chunks.length === 1 ? chunks[0] : chunks[0];
-        const base64Val = Buffer.from(primaryPayload).toString("base64");
+        let payloadToSend = this.localPayload;
+        // If payload is larger than standard BLE ATT budget, extract the most recent events
+        if (Buffer.byteLength(payloadToSend, "utf-8") > 512) {
+          try {
+            const parsed = JSON.parse(payloadToSend);
+            if (Array.isArray(parsed)) {
+              const trimmed = [];
+              for (let i = parsed.length - 1; i >= 0; i--) {
+                trimmed.unshift(parsed[i]);
+                if (Buffer.byteLength(JSON.stringify(trimmed), "utf-8") > 480) {
+                  trimmed.shift();
+                  break;
+                }
+              }
+              payloadToSend = JSON.stringify(trimmed);
+            }
+          } catch (_) {}
+        }
+        const base64Val = Buffer.from(payloadToSend, "utf-8").toString("base64");
         await this.peripheral.updateValue(
           SERVICE_UUID,
           CHAR_READ_UUID,
@@ -210,7 +226,7 @@ export class PeerDiscoveryManager {
       this.peripheral = new PeripheralModule();
 
       this.peripheral.on("ready", async () => {
-        if (!this.isScanning) return;
+        if (!this.active) return;
         try {
           await this.peripheral.addService(SERVICE_UUID, true);
 
@@ -230,14 +246,14 @@ export class PeerDiscoveryManager {
             Permission.WRITEABLE
           );
 
-          if (!this.isScanning) return;
+          if (!this.active) return;
           await this._syncLocalPayloadToGatt();
           await this.peripheral.startAdvertising();
-          if (this.isScanning) {
+          if (this.active) {
             console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
           }
         } catch (err) {
-          if (this.isScanning) {
+          if (this.active) {
             console.error("[PeerDiscovery] Failed to start peripheral services:", err);
           }
         }

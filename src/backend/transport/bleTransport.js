@@ -26,11 +26,19 @@ export class BleTransport extends MeshTransport {
           console.log(`[BLE Transport] Processing incoming payload from peer: ${peerId}`);
           try {
             const incomingEvents = JSON.parse(rawPayload);
-            if (Array.isArray(incomingEvents) && incomingEvents.length > 0) {
+            const eventsList = Array.isArray(incomingEvents)
+              ? incomingEvents
+              : incomingEvents?.events && Array.isArray(incomingEvents.events)
+              ? incomingEvents.events
+              : incomingEvents && incomingEvents.id
+              ? [incomingEvents]
+              : [];
+
+            if (eventsList.length > 0) {
               const store = getStore();
               const newEvents = [];
 
-              for (const evt of incomingEvents) {
+              for (const evt of eventsList) {
                 if (!evt || !evt.id) continue;
                 const seen = await store.hasSeen(evt.origin_node_id, evt.seq);
                 if (seen) continue;

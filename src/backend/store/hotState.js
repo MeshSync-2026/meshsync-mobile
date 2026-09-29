@@ -43,18 +43,21 @@ class WebStorageMock {
   }
 }
 
-let MMKVClass;
+// MMKV is a native module — unavailable in Expo Go. Guard BOTH the require
+// and the instantiation; fall back to the in-memory mock so the UI preview
+// still runs (real persistence comes with the dev build / APK).
+let storage;
 if (Platform.OS === 'web') {
-  MMKVClass = WebStorageMock;
+  storage = new WebStorageMock();
 } else {
   try {
-    MMKVClass = require('react-native-mmkv').MMKV;
+    const { MMKV } = require('react-native-mmkv');
+    storage = new MMKV();
   } catch (e) {
-    MMKVClass = WebStorageMock;
+    console.warn('[hotState] MMKV unavailable — using in-memory storage (Expo Go preview)');
+    storage = new WebStorageMock();
   }
 }
-
-export const storage = new MMKVClass();
 
 export const ROLE = {
   CIVILIAN: "CIVILIAN",

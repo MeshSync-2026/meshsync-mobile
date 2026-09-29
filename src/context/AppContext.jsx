@@ -28,7 +28,7 @@ function detectSystemLang() {
 }
 
 export function AppProvider({ children }) {
-  const { colors } = useTheme();
+  const { colors, spacing, radius, typography, shadows } = useTheme();
   const { activeRole, isRegistered } = useMeshSync();
 
   const [lang, setLangState] = useState('en');
@@ -67,6 +67,10 @@ export function AppProvider({ children }) {
   const value = useMemo(
     () => ({
       colors,
+      spacing,
+      radius,
+      typography,
+      shadows,
       lang,
       setLang,
       t,
@@ -75,7 +79,7 @@ export function AppProvider({ children }) {
       isResponder,
       isAuthorized,
     }),
-    [colors, lang, setLang, t, isCivilian, isResponder, isAuthorized]
+    [colors, spacing, radius, typography, shadows, lang, setLang, t, isCivilian, isResponder, isAuthorized]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

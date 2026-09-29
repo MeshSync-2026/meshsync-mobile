@@ -21,6 +21,15 @@ export async function requestBluetoothPermissions() {
 
   try {
     if (Platform.Version >= 31) {
+      // Check if Bluetooth permissions are already granted
+      if (typeof PermissionsAndroid.check === "function") {
+        const hasScan = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
+        const hasConnect = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+        if (hasScan && hasConnect) {
+          return true;
+        }
+      }
+
       const permissions = [
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
@@ -28,10 +37,20 @@ export async function requestBluetoothPermissions() {
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ];
       const granted = await PermissionsAndroid.requestMultiple(permissions);
-      return Object.values(granted).every(
-        (status) => status === PermissionsAndroid.RESULTS.GRANTED
-      );
+
+      // On Android 12+ (API 31+), BLUETOOTH_SCAN and BLUETOOTH_CONNECT are the mandatory permissions.
+      // Do not block BLE operation if ACCESS_FINE_LOCATION is denied or approximate.
+      const scanGranted =
+        granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] === PermissionsAndroid.RESULTS.GRANTED;
+      const connectGranted =
+        granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED;
+
+      return Boolean(scanGranted && connectGranted);
     } else {
+      if (typeof PermissionsAndroid.check === "function") {
+        const hasFine = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        if (hasFine) return true;
+      }
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
       );
@@ -222,12 +241,18 @@ export class PeerDiscoveryManager {
       if (!PeripheralModule) return;
 
       const shortId = (this.nodeId || "node").slice(-6);
-      const advName = `MeshSync-${shortId}`;
+      const advName = `MS-${shortId}`;
       try {
         await PeripheralModule.setDeviceName(advName);
       } catch (_) {}
 
       this.peripheral = new PeripheralModule();
+
+      if (typeof this.peripheral.on === "function") {
+        this.peripheral.on("error", (err) => {
+          console.warn("[PeerDiscovery] BLE Peripheral native module error:", err?.message || err);
+        });
+      }
 
       this.peripheral.on("ready", async () => {
         if (!this.active) return;
@@ -252,16 +277,20 @@ export class PeerDiscoveryManager {
 
           if (!this.active) return;
           await this._syncLocalPayloadToGatt();
-          await this.peripheral.startAdvertising(
-            { [SERVICE_UUID]: "" },
-            { includeDeviceName: true, connectable: true }
-          );
+
+          // Pass options object directly so services are not duplicated with empty service-data.
+          // This keeps the legacy BLE packet under the mandatory 31-byte Android limit.
+          await this.peripheral.startAdvertising({
+            includeDeviceName: true,
+            connectable: true,
+          });
+
           if (this.active) {
             console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
           }
         } catch (err) {
           if (this.active) {
-            console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+            console.error("[PeerDiscovery] Failed to start peripheral services:", err?.message || err);
           }
         }
       });
@@ -317,12 +346,61 @@ export class PeerDiscoveryManager {
 
   async _startCentral() {
     try {
+      // Check current Bluetooth adapter state before scanning
+      if (typeof this.bleManager.state === "function") {
+        const currentState = await this.bleManager.state();
+        if (currentState === "PoweredOn") {
+          this._beginScanning();
+          return;
+        }
+
+        console.log(`[PeerDiscovery] BLE adapter state is '${currentState}'. Awaiting PoweredOn...`);
+        if (typeof this.bleManager.onStateChange === "function") {
+          const subscription = this.bleManager.onStateChange((state) => {
+            if (state === "PoweredOn") {
+              console.log("[PeerDiscovery] BLE adapter is now PoweredOn. Starting central scanner...");
+              try {
+                if (subscription && typeof subscription.remove === "function") {
+                  subscription.remove();
+                }
+              } catch (_) {}
+              if (this.active) {
+                this._beginScanning();
+              }
+            }
+          }, true);
+          return;
+        }
+      }
+
+      this._beginScanning();
+    } catch (err) {
+      console.error("[PeerDiscovery] Failed to verify BLE state:", err?.message || err);
+      this._beginScanning();
+    }
+  }
+
+  _beginScanning() {
+    if (!this.active) return;
+
+    try {
+      this.bleManager.stopDeviceScan();
+    } catch (_) {}
+
+    try {
       this.bleManager.startDeviceScan(
         null, // Scan all devices to inspect names and service UUIDs reliably on all Android chipsets
         { allowDuplicates: true },
         async (error, device) => {
           if (error) {
             console.error("[PeerDiscovery] BLE Scan error:", error?.message || error);
+            // If scanning fails temporarily, retry after a cooldown window
+            if (this.active && !this._scanRetryTimeout) {
+              this._scanRetryTimeout = setTimeout(() => {
+                this._scanRetryTimeout = null;
+                if (this.active) this._beginScanning();
+              }, 4000);
+            }
             return;
           }
 
@@ -351,8 +429,13 @@ export class PeerDiscoveryManager {
             if (now - lastConnect < CONNECTION_COOLDOWN_MS) return;
             if (this.connectingPeers.has(peerNodeId)) return;
 
-            // Collision Avoidance: Add randomized jitter delay before connecting
-            const jitterMs = 300 + Math.floor(Math.random() * 800);
+            // Deterministic collision avoidance:
+            // Higher nodeId initiates immediately; lower nodeId waits a grace period
+            const isHigherNode = String(this.nodeId) > String(peerNodeId);
+            const jitterMs = isHigherNode
+              ? 150 + Math.floor(Math.random() * 250)
+              : 1800 + Math.floor(Math.random() * 500);
+
             setTimeout(() => {
               const currentNow = Date.now();
               const recentConnect = this.lastConnections.get(peerNodeId) || 0;
@@ -383,6 +466,13 @@ export class PeerDiscoveryManager {
 
     try {
       connectedDevice = await device.connect({ timeout: 8000 });
+
+      // Request higher connection priority on Android for fast GATT operations
+      if (Platform.OS === "android" && typeof connectedDevice.requestConnectionPriority === "function") {
+        try {
+          await connectedDevice.requestConnectionPriority(1); // 1 = HIGH
+        } catch (_) {}
+      }
 
       // Request higher MTU if supported (Android)
       if (Platform.OS === "android" && typeof connectedDevice.requestMTU === "function") {

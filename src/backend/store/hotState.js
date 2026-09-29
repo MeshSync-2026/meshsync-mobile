@@ -71,13 +71,21 @@ if (Platform.OS === "web") {
   MMKVClass = PersistentStorage;
 } else {
   try {
-    MMKVClass = require("react-native-mmkv").MMKV;
+    const mmkvModule = require("react-native-mmkv");
+    MMKVClass = (mmkvModule && mmkvModule.MMKV) || PersistentStorage;
   } catch (e) {
     MMKVClass = PersistentStorage;
   }
 }
 
-export const storage = new MMKVClass();
+let storageInstance;
+try {
+  storageInstance = new MMKVClass();
+} catch (e) {
+  storageInstance = new PersistentStorage();
+}
+
+export const storage = storageInstance;
 
 export const ROLE = { CIVILIAN: "CIVILIAN", RESPONDER: "RESPONDER" };
 

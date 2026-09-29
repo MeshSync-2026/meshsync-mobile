@@ -230,4 +230,26 @@ describe("WsTransport Production WebSocket Transport", () => {
       JSON.stringify({ type: "events", events })
     );
   });
+
+  test("sendEvents should be the broadcast entry point used by MeshSyncContext", async () => {
+    // Regression: the context once called wsTransport.send(), which does not
+    // exist — the TypeError was swallowed and cloud sync never ran.
+    expect(typeof transport.sendEvents).toBe("function");
+
+    transport.start();
+    const wsInstance = mockInstances[0];
+    wsInstance.onopen();
+    mockSend.mockClear();
+
+    const events = [{ id: "evt-2", origin_node_id: "node-1", seq: 11 }];
+    await transport.sendEvents(events);
+
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ type: "events", events }));
+  });
+
+  test("broadcast before connecting is a silent no-op (never throws)", async () => {
+    await expect(transport.broadcast([{ id: "evt-3" }])).resolves.toBeUndefined();
+    await expect(transport.sendEvents([{ id: "evt-4" }])).resolves.toBeUndefined();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
 });

@@ -47,6 +47,11 @@ describe("cloudSync Integration Manager", () => {
     mockInsert.mockResolvedValue(true);
   });
 
+  afterEach(() => {
+    // stop the periodic retry timer started by startCloudSync()
+    stopCloudSync();
+  });
+
   test("startCloudSync should subscribe to NetInfo events and return an unsubscribe function", () => {
     const unsub = startCloudSync();
 
@@ -137,6 +142,57 @@ describe("cloudSync Integration Manager", () => {
     expect(result.received).toBe(2);
   });
 
+  test("pull normalizes Postgres-native types before inserting", async () => {
+    mockGetUnsynced.mockResolvedValue([]);
+    pullEvents.mockResolvedValue([
+      {
+        id: "cloud-pg-1",
+        incident_id: "inc-1",
+        seq: "7",                    // bigint arrives as string from pg
+        created_at: "2026-09-29T08:46:34.151Z", // timestamptz arrives as ISO string
+        hlc_timestamp: "0001754611200|00042|a3f9c1e7",
+      },
+    ]);
+
+    await syncNow();
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "cloud-pg-1",
+        seq: 7,
+        created_at: Date.parse("2026-09-29T08:46:34.151Z"),
+        is_cloud_synced: true, // pulled rows must never be re-pushed
+      })
+    );
+  });
+
+  test("pull keeps numeric seq/created_at untouched", async () => {
+    mockGetUnsynced.mockResolvedValue([]);
+    pullEvents.mockResolvedValue([
+      { id: "cloud-num-1", seq: 3, created_at: 1790000000000, hlc_timestamp: "h1" },
+    ]);
+
+    await syncNow();
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ seq: 3, created_at: 1790000000000, is_cloud_synced: true })
+    );
+  });
+
+  test("pull advances the watermark to the highest served HLC", async () => {
+    const { setLastCloudSyncHlc, getLastCloudSyncHlc } = require("../store/hotState");
+    mockGetUnsynced.mockResolvedValue([]);
+    pullEvents.mockResolvedValue([
+      { id: "c1", hlc_timestamp: "0000000000001|00000|aaaaaaaa" },
+      { id: "c2", hlc_timestamp: "0000000000009|00000|a3f9c1e7" },
+    ]);
+
+    await syncNow();
+
+    expect(getLastCloudSyncHlc()).toBe(null); // mock returns null
+    expect(setLastCloudSyncHlc).toHaveBeenCalledWith("0000000000009|00000|a3f9c1e7");
+  });
+
   test("should handle ingestion failure gracefully and log an error", async () => {
     mockGetUnsynced.mockResolvedValue([{ id: "evt-1" }]);
     ingestBatch.mockRejectedValue(new Error("Ingestion server down"));
@@ -154,5 +210,14 @@ describe("cloudSync Integration Manager", () => {
     expect(consoleSpy).toHaveBeenCalledWith("[cloudSync] retry later:", "Ingestion server down");
 
     consoleSpy.mockRestore();
+  });
+
+  test("stopCloudSync clears the periodic retry timer", () => {
+    jest.useFakeTimers();
+    startCloudSync();
+    stopCloudSync();
+
+    expect(jest.getTimerCount()).toBe(0);
+    jest.useRealTimers();
   });
 });

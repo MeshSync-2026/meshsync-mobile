@@ -3,6 +3,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { getStore } from "../backend/store/eventStore";
 import {
   initHotState,
+  hydrateHotState,
   getNodeId,
   getActiveRole,
   setActiveRole,
@@ -49,89 +50,117 @@ export function MeshSyncProvider({ children }) {
 
   // Initialize transports and subscriptions on mount
   useEffect(() => {
-    initHotState();
-    const currentNodeId = getNodeId();
-    setNodeIdState(currentNodeId);
-    setActiveRoleState(getActiveRole());
-    setRegisteredState(isRegistered());
-    setAssignedZoneIdState(getAssignedZoneId());
+    let isMounted = true;
+    let unsubscribeStore = () => {};
+    let unsubscribeNet = () => {};
+    let peerInterval = null;
+    let stopCloudSync = () => {};
+    let ble = null;
+    let ws = null;
 
-    // Load user profile
-    getProfile().then((prof) => {
-      if (prof) setUserProfile(prof);
-    }).catch(() => {});
+    const setup = async () => {
+      // 0. Ensure persistent hot state is hydrated before reading node identity
+      await hydrateHotState();
+      const currentNodeId = getNodeId();
 
-    const store = getStore();
+      if (!isMounted) return;
 
-    const refreshEventCounts = async () => {
+      setNodeIdState(currentNodeId);
+      setActiveRoleState(getActiveRole());
+      setRegisteredState(isRegistered());
+      setAssignedZoneIdState(getAssignedZoneId());
+
+      // Load user profile
       try {
-        const allEvents = await store.getAll();
-        const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === currentNodeId);
-        const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== currentNodeId);
-        setMyEvents(mine);
-        setRelayedCount(relayed.length);
+        const prof = await getProfile();
+        if (prof && isMounted) setUserProfile(prof);
+      } catch (_) {}
+
+      const store = getStore();
+
+      const refreshEventCounts = async () => {
+        try {
+          const allEvents = await store.getAll();
+          const activeNodeId = getNodeId();
+          const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === activeNodeId);
+          const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== activeNodeId);
+          if (isMounted) {
+            setMyEvents(mine);
+            setRelayedCount(relayed.length);
+          }
+        } catch (err) {
+          console.error("[MeshSyncContext] Error fetching events:", err);
+        }
+      };
+
+      // 1. Initial state hydration
+      try {
+        const initialProjection = await store.getProjection();
+        if (initialProjection && isMounted) {
+          setIncidents(initialProjection.incidents || []);
+          setResponders(initialProjection.responders || []);
+          setHistory(initialProjection.history || []);
+        }
       } catch (err) {
-        console.error("[MeshSyncContext] Error fetching events:", err);
+        console.error("[MeshSyncContext] Error loading initial projection:", err);
       }
+      await refreshEventCounts();
+
+      if (!isMounted) return;
+
+      // 2. Subscribe to store projection updates
+      unsubscribeStore = store.subscribe((projection) => {
+        if (!isMounted) return;
+        setIncidents(projection?.incidents || []);
+        setResponders(projection?.responders || []);
+        setHistory(projection?.history || []);
+        refreshEventCounts();
+      });
+
+      // 3. Initialize BLE and WebSocket transports with explicit Node ID
+      ble = new BleTransport(currentNodeId, getActiveRole());
+      ws = new WsTransport();
+      bleTransportRef.current = ble;
+      wsTransportRef.current = ws;
+
+      ble.start();
+      ws.start();
+
+      // 4. Track live peer counts
+      peerInterval = setInterval(() => {
+        const blePeers = ble.getPeerCount ? ble.getPeerCount() : 0;
+        const wsPeers = ws.getPeerCount ? ws.getPeerCount() : 0;
+        if (isMounted) {
+          setPeerCount(blePeers + wsPeers);
+        }
+      }, 3000);
+
+      // 5. Start Cloud Sync listener
+      stopCloudSync = startCloudSync();
+
+      // 6. Monitor Internet connectivity
+      unsubscribeNet = NetInfo.addEventListener((state) => {
+        if (isMounted) {
+          setIsOnline(Boolean(state.isConnected));
+        }
+      });
+
+      // 7. Warm up GPS location without showing permission alert immediately
+      getCurrentLocation({ showAlertOnDenied: false }).then((loc) => {
+        if (loc && isMounted) setUserLocation(loc);
+      }).catch(() => {});
     };
 
-    // 1. Initial state hydration
-    store.getProjection().then((initialProjection) => {
-      if (initialProjection) {
-        setIncidents(initialProjection.incidents || []);
-        setResponders(initialProjection.responders || []);
-        setHistory(initialProjection.history || []);
-      }
-      refreshEventCounts();
-    }).catch((err) => {
-      console.error("[MeshSyncContext] Error loading initial projection:", err);
-      refreshEventCounts();
-    });
-
-    // 2. Subscribe to store projection updates
-    const unsubscribeStore = store.subscribe((projection) => {
-      setIncidents(projection?.incidents || []);
-      setResponders(projection?.responders || []);
-      setHistory(projection?.history || []);
-      refreshEventCounts();
-    });
-
-    // 3. Initialize BLE and WebSocket transports with explicit Node ID
-    const ble = new BleTransport(currentNodeId, getActiveRole());
-    const ws = new WsTransport();
-    bleTransportRef.current = ble;
-    wsTransportRef.current = ws;
-
-    ble.start();
-    ws.start();
-
-    // 4. Track live peer counts
-    const peerInterval = setInterval(() => {
-      const blePeers = ble.getPeerCount ? ble.getPeerCount() : 0;
-      const wsPeers = ws.getPeerCount ? ws.getPeerCount() : 0;
-      setPeerCount(blePeers + wsPeers);
-    }, 3000);
-
-    // 5. Start Cloud Sync listener
-    const stopCloudSync = startCloudSync();
-
-    // 6. Monitor Internet connectivity
-    const unsubscribeNet = NetInfo.addEventListener((state) => {
-      setIsOnline(Boolean(state.isConnected));
-    });
-
-    // 7. Warm up GPS location without showing permission alert immediately
-    getCurrentLocation({ showAlertOnDenied: false }).then((loc) => {
-      if (loc) setUserLocation(loc);
-    }).catch(() => {});
+    setup();
 
     return () => {
+      isMounted = false;
       unsubscribeStore();
       unsubscribeNet();
-      clearInterval(peerInterval);
+      if (peerInterval) clearInterval(peerInterval);
       stopCloudSync();
-      ble.stop();
-      ws.stop();
+      if (ble) ble.stop();
+      if (ws) ws.stop();
     };
   }, []);
 

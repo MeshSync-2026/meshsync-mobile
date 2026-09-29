@@ -58,15 +58,6 @@ export default function HomeScreen() {
                   'SOS Broadcasted',
                   'Your emergency alert is active and being relayed across all nearby mesh nodes.'
                 );
-              } else if (result.error === 'no_sos_needed') {
-                Alert.alert(
-                  'No SOS needed',
-                  'Your last status says you are safe with enough supplies and no injuries. Update your status if your situation changed.',
-                  [
-                    { text: 'Update My Status', onPress: () => navigation.navigate('MyStatus') },
-                    { text: 'Send anyway', style: 'destructive', onPress: sendSosForced },
-                  ]
-                );
               } else {
                 Alert.alert('Could not send SOS', result.error || 'Please try again.');
               }
@@ -77,20 +68,6 @@ export default function HomeScreen() {
         },
       ],
     );
-  };
-
-  // Send SOS even when My Status says all-clear (user explicitly confirmed)
-  const sendSosForced = async () => {
-    try {
-      const result = await sendSOS({ force: true });
-      if (result.success) {
-        Alert.alert('SOS Broadcasted', 'Your emergency alert is active and being relayed across all nearby mesh nodes.');
-      } else {
-        Alert.alert('Could not send SOS', result.error || 'Please try again.');
-      }
-    } catch (e) {
-      Alert.alert('Could not send SOS', e.message || 'Please try again.');
-    }
   };
 
   return (

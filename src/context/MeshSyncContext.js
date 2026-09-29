@@ -30,7 +30,7 @@ import {
   createCancelledEvent,
 } from "../backend/eventCreator";
 import { deriveSeverity } from "../backend/shared/severity";
-import { ACTOR_ROLE } from "../backend/shared/enums";
+import { ACTOR_ROLE, SEVERITY } from "../backend/shared/enums";
 import { registerDevice } from "../backend/cloudApi";
 import { startHeartbeat, stopHeartbeat } from "../backend/heartbeatService";
 import { startGc, stopGc } from "../backend/gcService";
@@ -200,15 +200,12 @@ export function MeshSyncProvider({ children }) {
   /**
    * Send Emergency SOS (Captures GPS coordinates if available, otherwise falls back to landmark / profile info)
    */
-  const sendSOS = useCallback(async ({ landmarkName, victimName, force = false } = {}) => {
-    // Severity comes from the victim's last My Status update (§3, severity extension).
-    // If they reported Safe + Enough + Uninjured, there is nothing to escalate.
+  const sendSOS = useCallback(async ({ landmarkName, victimName, severityLevel, severity } = {}) => {
+    // SOS is an immediate life-safety action: status updates must never block or delay SOS dispatch.
+    // If victim previously reported critical conditions, escalate severity; otherwise default to HIGH.
     const status = getLastStatus();
-    let severityLevel = deriveSeverity(status);
-    if (severityLevel === 0 && !force) {
-      return { success: false, error: "no_sos_needed" };
-    }
-    if (severityLevel === 0) severityLevel = 1; // forced SOS defaults to LOW
+    const derived = deriveSeverity(status);
+    const resolvedSeverity = severityLevel ?? severity ?? (derived > 0 ? derived : SEVERITY.HIGH);
 
     // GPS is best-effort: fall back to the last known location, then landmark/profile info
     const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
@@ -230,7 +227,8 @@ export function MeshSyncProvider({ children }) {
       longitude: loc?.longitude ?? null,
       landmarkName: landmark,
       victimName: resolvedVictim,
-      severityLevel,
+      severityLevel: resolvedSeverity,
+      severity: resolvedSeverity,
       statusSafety: status.safety,
       statusWater: status.water,
       statusInjury: status.injury,

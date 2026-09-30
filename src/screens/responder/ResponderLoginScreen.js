@@ -16,7 +16,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../theme/ThemeContext';
 import { useMeshSync } from '../../context/MeshSyncContext';
-import { responderCredentials } from '../../data/mockData';
 
 import {
   saveResponderSession,
@@ -91,7 +90,6 @@ export default function ResponderLoginScreen({
       const result = await loginResponder({
         username: enteredId,
         password: enteredPin,
-        fallbackCredentials: responderCredentials,
       });
 
       if (!result.success) {
@@ -112,6 +110,10 @@ export default function ResponderLoginScreen({
 
         const responderSession = {
           responderId: enteredId,
+          pin: enteredPin,
+          authorityUserId: result.authorityUserId || enteredId,
+          assignedZoneId: result.assignedZoneId || 'ZONE-DEFAULT',
+          token: result.token || '',
 
           authenticated: true,
 

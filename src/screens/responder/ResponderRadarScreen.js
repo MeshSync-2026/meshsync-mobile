@@ -21,7 +21,7 @@ export default function ResponderRadarScreen({ route, navigation }) {
 
   const targetLocation = incident.raw
     ? { latitude: incident.raw.latitude, longitude: incident.raw.longitude }
-    : { latitude: incident.latitude ?? 6.9316, longitude: incident.longitude ?? 79.8612 };
+    : { latitude: incident.latitude ?? null, longitude: incident.longitude ?? null };
 
   const projection = React.useMemo(() => {
     return projectToRadar(userLocation, targetLocation, 2500, RADAR_SIZE);

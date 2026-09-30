@@ -8,7 +8,17 @@ import { useMeshSync } from '../context/MeshSyncContext';
 import { HAZARD_CATEGORY, SEVERITY } from '../backend/shared/enums';
 import TopAppBar from '../components/TopAppBar';
 import PrimaryButton from '../components/PrimaryButton';
-import { hazardCategories } from '../data/mockData';
+
+const hazardCategories = [
+  { id: 'flood', label: 'Flood', icon: 'water' },
+  { id: 'landslide', label: 'Landslide', icon: 'terrain' },
+  { id: 'storm', label: 'Cyclone/Storm', icon: 'cyclone' },
+  { id: 'fire', label: 'Fire', icon: 'local-fire-department' },
+  { id: 'medical', label: 'Medical', icon: 'medical-services' },
+  { id: 'damage', label: 'Structural Damage', icon: 'home-repair-service' },
+  { id: 'road', label: 'Road Blocked', icon: 'block' },
+  { id: 'other', label: 'Other', icon: 'more-horiz' },
+];
 
 const SEVERITIES = ['Low', 'Medium', 'High'];
 

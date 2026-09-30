@@ -18,9 +18,17 @@ import { useTheme } from '../theme/ThemeContext';
 import { useMeshSync } from '../context/MeshSyncContext';
 import { ROLE } from '../backend/store/hotState';
 import TopAppBar from '../components/TopAppBar';
-import { profile as mockProfile } from '../data/mockData';
+import { clearResponderSession } from '../utils/storage';
 
 const PROFILE_STORAGE_KEY = '@meshsync_profile';
+
+const EMPTY_PROFILE = {
+  fullName: '',
+  nic: '',
+  phone: '',
+  homeLandmark: '',
+  landmark: '',
+};
 
 export default function ProfileScreen({ navigation }) {
   const {
@@ -32,7 +40,7 @@ export default function ProfileScreen({ navigation }) {
     toggleScheme,
   } = useTheme();
 
-  const { nodeId, isRegistered, activeRole, switchRole, myEvents, relayedCount } = useMeshSync();
+  const { nodeId, isRegistered, activeRole, switchRole, logoutResponder, refreshUserProfile, myEvents, relayedCount } = useMeshSync();
   const [profile, setProfile] = useState(null);
   const [relayAuto, setRelayAuto] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
@@ -55,16 +63,15 @@ export default function ProfileScreen({ navigation }) {
               setProfile(parsedProfile);
             }
           } else {
-            // Temporary fallback for users who haven't completed onboarding.
             if (mounted) {
-              setProfile(mockProfile);
+              setProfile(EMPTY_PROFILE);
             }
           }
         } catch (error) {
           console.error('Failed to load profile:', error);
 
           if (mounted) {
-            setProfile(mockProfile);
+            setProfile(EMPTY_PROFILE);
           }
         }
       };
@@ -80,7 +87,7 @@ export default function ProfileScreen({ navigation }) {
   const resetAppData = () => {
     Alert.alert(
       'Reset App Data',
-      'This will erase all local data on this device.',
+      'This will erase all local profile and session data on this device.',
       [
         {
           text: 'Cancel',
@@ -92,6 +99,11 @@ export default function ProfileScreen({ navigation }) {
           onPress: async () => {
             try {
               await AsyncStorage.removeItem(PROFILE_STORAGE_KEY);
+              await clearResponderSession();
+              logoutResponder();
+              if (refreshUserProfile) {
+                await refreshUserProfile();
+              }
 
               Alert.alert(
                 'Data Reset',

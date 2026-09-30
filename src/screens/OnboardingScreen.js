@@ -13,12 +13,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
+import { useMeshSync } from '../context/MeshSyncContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { saveProfile } from '../utils/storage';
 import { getCurrentLocation } from '../utils/location';
 
 export default function OnboardingScreen() {
   const navigation = useNavigation();
+  const { refreshUserProfile } = useMeshSync();
 
   const {
     colors,
@@ -77,6 +79,9 @@ export default function OnboardingScreen() {
 
       // Save profile using our storage helper
       await saveProfile(profile);
+      if (refreshUserProfile) {
+        await refreshUserProfile();
+      }
 
       console.log('Profile saved locally:', profile);
 

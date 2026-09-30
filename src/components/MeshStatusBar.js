@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function MeshStatusBar({ nodesInRange = 48, label }) {
+export default function MeshStatusBar({ nodesInRange = 0, label }) {
   const { colors, spacing, typography } = useTheme();
 
   return (

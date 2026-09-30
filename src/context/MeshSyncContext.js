@@ -20,7 +20,7 @@ import { BleTransport } from "../backend/transport/bleTransport";
 import { WsTransport } from "../backend/transport/wsTransport";
 import { startCloudSync, syncNow as triggerCloudSync } from "../backend/cloudSync";
 import { loginOfficer } from "../backend/cloudApi";
-import { getProfile } from "../utils/storage";
+import { getProfile, getResponderSession } from "../utils/storage";
 import {
   createSosEvent,
   createHazardEvent,
@@ -354,29 +354,41 @@ export function MeshSyncProvider({ children }) {
   /**
    * Authenticate and Register as Responder
    */
-  const loginResponder = useCallback(async ({ username, password, fallbackCredentials }) => {
+  const loginResponder = useCallback(async ({ username, password }) => {
     try {
+      const normalizedId = (username || "").trim().toUpperCase();
+      const normalizedPin = (password || "").trim();
       let authResult = null;
+
       try {
-        authResult = await loginOfficer(username, password);
+        authResult = await loginOfficer(normalizedId, normalizedPin);
       } catch (e) {
-        // Offline / mock credentials check
+        const cachedSession = await getResponderSession();
+        const offlineId = process.env.EXPO_PUBLIC_OFFLINE_RESPONDER_ID || "RSP-001";
+        const offlinePin = process.env.EXPO_PUBLIC_OFFLINE_RESPONDER_PIN || "1234";
+
         if (
-          fallbackCredentials &&
-          username.toUpperCase() === fallbackCredentials.responderId &&
-          password === fallbackCredentials.pin
+          cachedSession &&
+          cachedSession.responderId === normalizedId &&
+          cachedSession.pin === normalizedPin
         ) {
           authResult = {
-            authority_user_id: username.toUpperCase(),
+            authority_user_id: cachedSession.authorityUserId || normalizedId,
+            assigned_zone_id: cachedSession.assignedZoneId || "ZONE-DEFAULT",
+            token: cachedSession.token || "",
+          };
+        } else if (normalizedId === offlineId.toUpperCase() && normalizedPin === offlinePin) {
+          authResult = {
+            authority_user_id: normalizedId,
             assigned_zone_id: "ZONE-DEFAULT",
-            token: "offline-mock-jwt-token",
+            token: "",
           };
         } else {
           throw e;
         }
       }
 
-      const authorityUserId = authResult.user?.id || authResult.authority_user_id || username;
+      const authorityUserId = authResult.user?.id || authResult.authority_user_id || normalizedId;
       const zoneId = authResult.user?.assigned_zone_id || authResult.assigned_zone_id || "ZONE-DEFAULT";
 
       registerAsResponder({
@@ -394,10 +406,28 @@ export function MeshSyncProvider({ children }) {
         console.log("[MeshSyncContext] device registration deferred:", e.message)
       );
 
-      return { success: true };
+      return {
+        success: true,
+        authorityUserId,
+        assignedZoneId: zoneId,
+        token: authResult.token || "",
+      };
     } catch (error) {
       console.error("[MeshSyncContext] Responder login failed:", error);
       return { success: false, error: error.message || "Invalid credentials" };
+    }
+  }, []);
+
+  /**
+   * Reload local user profile from AsyncStorage into context
+   */
+  const refreshUserProfile = useCallback(async () => {
+    try {
+      const prof = await getProfile();
+      setUserProfile(prof || null);
+      return prof;
+    } catch (e) {
+      return null;
     }
   }, []);
 
@@ -449,6 +479,7 @@ export function MeshSyncProvider({ children }) {
 
     // Actions
     refreshLocation,
+    refreshUserProfile,
     sendSOS,
     cancelSOS,
     reportHazard,

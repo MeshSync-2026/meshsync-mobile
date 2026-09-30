@@ -123,8 +123,6 @@ export function MeshSyncProvider({ children }) {
       }
     };
 
-    bootstrapStore();
-
     // 2. Subscribe to store projection updates
     const unsubscribeStore = store.subscribe((projection) => {
       setIncidents(projection?.incidents || []);
@@ -140,27 +138,32 @@ export function MeshSyncProvider({ children }) {
     bleTransportRef.current = ble;
     wsTransportRef.current = ws;
 
-    ble.start();
-    ws.start();
+    // 4. Sequentially bootstrap store -> start BLE (requests BT + Location permissions) -> warm up GPS
+    const initServices = async () => {
+      await bootstrapStore();
+      await ble.start();
+      ws.start();
+      getCurrentLocation({ showAlertOnDenied: false })
+        .then((loc) => {
+          if (loc) setUserLocation(loc);
+        })
+        .catch(() => {});
+    };
+    initServices();
 
-    // 4. Track live BLE peer counts
+    // 5. Track live BLE peer counts
     const peerInterval = setInterval(() => {
       const blePeers = ble.getPeerCount ? ble.getPeerCount() : 0;
       setPeerCount(blePeers);
     }, 3000);
 
-    // 5. Start Cloud Sync listener
+    // 6. Start Cloud Sync listener
     const stopCloudSync = startCloudSync();
 
-    // 6. Monitor Internet connectivity
+    // 7. Monitor Internet connectivity
     const unsubscribeNet = NetInfo.addEventListener((state) => {
       setIsOnline(Boolean(state.isConnected));
     });
-
-    // 7. Warm up GPS location without showing permission alert immediately
-    getCurrentLocation({ showAlertOnDenied: false }).then((loc) => {
-      if (loc) setUserLocation(loc);
-    }).catch(() => {});
 
     return () => {
       unsubscribeStore();

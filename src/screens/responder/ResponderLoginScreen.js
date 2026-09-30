@@ -13,6 +13,7 @@ import {
 
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../../theme/ThemeContext';
 import { useMeshSync } from '../../context/MeshSyncContext';
@@ -151,10 +152,37 @@ export default function ResponderLoginScreen({
 
 
       /*
-       * Navigate to responder dashboard.
+       * Mark onboarding complete for authorized responders too —
+       * RootNavigator keys the initial route off this profile.
        */
 
-      navigation.replace('AssignedMeshes');
+      try {
+        const profile = {
+          name: result.user?.full_name || enteredId,
+          fullName: result.user?.full_name || 'Authorized Responder',
+          role: 'RESPONDER',
+        };
+        await AsyncStorage.setItem(
+          '@meshsync_profile',
+          JSON.stringify(profile)
+        );
+      } catch (profileErr) {
+        console.log('Profile save skipped:', profileErr?.message || profileErr);
+      }
+
+      /*
+       * Navigate to responder dashboard. When arriving from onboarding
+       * (root stack), 'AssignedMeshes' only exists inside the Responder
+       * navigator — fall back to the root 'Responder' route.
+       */
+
+      const state = navigation.getState?.();
+      const routeNames = new Set((state?.routes || []).map((r) => r.name));
+      if (routeNames.has('AssignedMeshes')) {
+        navigation.replace('AssignedMeshes');
+      } else {
+        navigation.replace('Responder');
+      }
 
     } catch (error) {
 
@@ -219,17 +247,7 @@ export default function ResponderLoginScreen({
           <View style={styles.topActions}>
 
             <Pressable
-              onPress={() => {
-                if (navigation.canGoBack()) {
-                  navigation.goBack();
-                } else {
-                  const rootNav = navigation.getParent() || navigation;
-                  rootNav.reset({
-                    index: 0,
-                    routes: [{ name: 'Main' }],
-                  });
-                }
-              }}
+              onPress={() => navigation.goBack()}
               style={[
                 styles.iconBtn,
                 {

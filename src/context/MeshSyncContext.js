@@ -262,8 +262,9 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
-    await broadcastEvent(event);
     setActiveSosState(event.incident_id);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
+    await broadcastEvent(event);
 
     return { success: true, event };
   }, [userLocation, userProfile, broadcastEvent]);
@@ -290,6 +291,7 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
 
     return { success: true, event };
@@ -298,7 +300,7 @@ export function MeshSyncProvider({ children }) {
   /**
    * Submit Life Safety / Need Help status update
    */
-  const updateMyStatus = useCallback(async ({ safetyCode, waterCode, injuryCode, peopleCount, landmarkName }) => {
+  const updateMyStatus = useCallback(async ({ safetyCode, waterCode, injuryCode, peopleCount, landmarkName, incidentId }) => {
     const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
     if (loc) {
       setUserLocation(loc);
@@ -307,6 +309,7 @@ export function MeshSyncProvider({ children }) {
 
     const store = getStore();
     const event = createStatusEvent({
+      incidentId,
       safety_code: safetyCode,
       water_code: waterCode,
       injury_code: injuryCode,
@@ -317,6 +320,7 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
 
     // Persist so the next SOS can carry severity/status

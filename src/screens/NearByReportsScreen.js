@@ -1,344 +1,579 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../theme/ThemeContext';
+// Nearby Screen — radar visualization + incident cards
+// Ported from the New Test design: circular SVG radar with compass rotation,
+// filter chips (All/SOS/Hazards/Resolved), 25 km radius for responders,
+// 4-level severity badges, and Urgent/Community/Resolved sections.
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  RefreshControl,
+} from 'react-native';
+import Svg, { Circle, Line, G, Path, Text as SvgText } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
+import * as Location from 'expo-location';
+import { useApp } from '../context/AppContext';
 import { useMeshSync } from '../context/MeshSyncContext';
-import { REPORT_TYPE, SEVERITY, STATUS } from '../backend/shared/enums';
-import { SEVERITY_LABEL, SEVERITY_COLOR } from '../backend/shared/severity';
-import { calculateDistance, formatDistance } from '../backend/shared/radarGeo';
-import MeshStatusBar from '../components/MeshStatusBar';
-import TopAppBar from '../components/TopAppBar';
-import RadarView from '../components/RadarView';
+import { getNodeId } from '../backend/store/hotState';
+import { getCurrentLocation } from '../utils/location';
 
-const HAZARD_MAP = {
-  1: { label: 'Flood Hazard', icon: 'flood' },
-  2: { label: 'Landslide', icon: 'terrain' },
-  3: { label: 'Severe Storm', icon: 'storm' },
-  4: { label: 'Fire Outbreak', icon: 'local-fire-department' },
-  5: { label: 'Medical Emergency', icon: 'medical-services' },
-  6: { label: 'Structural Damage', icon: 'construction' },
+const RADAR_SIZE_DEFAULT = 200;
+const RADAR_SIZE_RESPONDER = 280;
+const MAX_RANGE_METERS = 25000; // 25km radar geofence (§7.3, §12.5)
+
+const CATEGORY_ICON = {
+  0: 'alert-circle',
+  1: 'water',
+  2: 'earth',
+  3: 'thunderstorm',
+  4: 'flame',
+  5: 'medkit',
+  6: 'home',
 };
 
-const SAFETY_MAP = {
-  0: { label: 'Safe', color: '#10B981' },
-  1: { label: 'Needs Assistance', color: '#F59E0B' },
-  2: { label: 'Trapped / Immediate Rescue', color: '#EF4444' },
+const CATEGORY_LABEL = {
+  0: 'General',
+  1: 'Flood',
+  2: 'Landslide',
+  3: 'Storm',
+  4: 'Fire',
+  5: 'Medical',
+  6: 'Structural',
 };
 
-const WATER_MAP = { 0: 'Water Supply: Good', 1: 'Water: Low', 2: 'No Water' };
-const INJURY_MAP = { 0: 'No Injuries', 1: 'Minor Injuries', 2: 'Severe Injuries' };
+function calcDistance(lat1, lng1, lat2, lng2) {
+  const latDiff = (lat2 - lat1) * 111000;
+  const lngDiff = (lng2 - lng1) * 111000 * Math.cos((lat1 * Math.PI) / 180);
+  return Math.sqrt(latDiff * latDiff + lngDiff * lngDiff);
+}
 
-export default function NearbyReportsScreen() {
-  const { colors, spacing, radius, typography, isDark } = useTheme();
-  const { incidents, userLocation, peerCount, isOnline, nodeId } = useMeshSync();
+function calcBearing(lat1, lng1, lat2, lng2) {
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaLambda = ((lng2 - lng1) * Math.PI) / 180;
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
 
-  const cardSurface = isDark ? colors.surfaceContainerHigh : colors.surfaceContainerLowest;
-  const mutedPanel = isDark ? colors.surfaceContainerHigh : '#F3F3F3';
+function formatDistance(meters) {
+  if (meters == null) return '—';
+  if (meters < 1000) return `${Math.round(meters)}m`;
+  return `${(meters / 1000).toFixed(1)}km`;
+}
 
-  // Partition and sort incidents descending by latest timestamp (excluding own device's reports)
-  const { urgentRequests, communityReports, resolvedReports } = useMemo(() => {
-    const urgent = [];
-    const community = [];
-    const resolved = [];
+function formatTimeAgo(timestamp) {
+  // events can arrive with created_at as ISO string (cloud) or null —
+  // coerce and bail out instead of rendering "NaNd ago"
+  const t = typeof timestamp === 'number' ? timestamp : Date.parse(timestamp);
+  if (!t || isNaN(t)) return '—';
+  const diff = Date.now() - t;
+  if (diff < 0 || isNaN(diff)) return '—';
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
-    const otherIncidents = (incidents || []).filter((inc) => {
-      const creator = inc.creator_node_id || inc.creatorNodeId || inc.origin_node_id || inc.originNodeId;
-      // Exclude reports created by this device so Nearby Reports exclusively shows peer/community alerts
-      if (nodeId && creator && creator === nodeId) {
-        return false;
-      }
-      return true;
-    });
+// Severity badge config — 4 levels, individual colors
+function getSeverityConfig(level) {
+  switch (level) {
+    case 4: return { label: 'VERY HIGH', color: '#FF1744' };
+    case 3: return { label: 'HIGH', color: '#FF5252' };
+    case 2: return { label: 'MEDIUM', color: '#FFAB40' };
+    case 1: return { label: 'LOW', color: '#FFD54F' };
+    default: return { label: 'MEDIUM', color: '#FFAB40' };
+  }
+}
 
-    const sorted = [...otherIncidents].sort((a, b) => {
-      const timeA = a.created_at || a.createdAt || 0;
-      const timeB = b.created_at || b.createdAt || 0;
-      return timeB - timeA;
-    });
+// Pin color by incident state
+function getPinColor(incident, colors) {
+  if (incident.confidence_code === 3 || incident.confidence_code === 4) {
+    return colors.status.success;
+  }
+  if (incident.report_type_code === 1) {
+    const sev = incident.severity_level || 2;
+    if (sev >= 3) return colors.status.critical;
+    return colors.status.warning;
+  }
+  return colors.status.warning;
+}
 
-    sorted.forEach((inc) => {
-      const isResolved = inc.status === STATUS.RESOLVED || inc.statusCode === STATUS.RESOLVED || inc.status_code === STATUS.RESOLVED;
-      if (isResolved) {
-        resolved.push(inc);
-      } else if (
-        inc.report_type_code === REPORT_TYPE.SOS ||
-        inc.reportTypeCode === REPORT_TYPE.SOS ||
-        (inc.event_type_code === 1 && !inc.report_type_code)
-      ) {
-        urgent.push(inc);
-      } else {
-        community.push(inc);
-      }
-    });
+function getIncidentTitle(incident) {
+  if (incident.report_type_code === 1) return 'SOS - Need Help';
+  const catLabel = CATEGORY_LABEL[incident.category_code] || 'Hazard';
+  // avoid "Hazard Hazard" when the category is unknown/missing
+  return catLabel === 'Hazard' ? 'Hazard' : `${catLabel} Hazard`;
+}
 
-    return { urgentRequests: urgent, communityReports: community, resolvedReports: resolved };
-  }, [incidents, nodeId]);
+// Radar — isolated so the 20fps sweep + compass heading only re-render
+// this small SVG subtree, never the whole screen. Runs ONLY while the tab
+// is focused — React Navigation keeps visited tabs mounted, so without
+// useIsFocused the 50ms timer + compass watch burned the JS thread forever
+// and made the whole app sluggish after visiting Nearby once.
+const Radar = React.memo(function Radar({ incidents, myLat, myLng, colors, size }) {
+  const isFocused = useIsFocused();
+  const [sweepAngle, setSweepAngle] = useState(0);
+  const [heading, setHeading] = useState(0);
+  const center = size / 2;
+  const radius = center - 15;
 
-  const getDistanceText = (inc) => {
-    const landmarkName = inc.landmark_name ?? inc.landmarkName;
-    if (!userLocation || inc.latitude == null || inc.longitude == null) {
-      return landmarkName || '~nearby';
-    }
-    const dist = calculateDistance(
-      userLocation.latitude,
-      userLocation.longitude,
-      inc.latitude,
-      inc.longitude
-    );
-    return formatDistance(dist);
-  };
+  useEffect(() => {
+    if (!isFocused) return;
+    let sub = null;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          sub = await Location.watchHeadingAsync((h) => {
+            const v = typeof h.trueHeading === 'number' ? h.trueHeading : h.magHeading || 0;
+            // magnetometer drifts ±2-3° even on a desk — only re-render on >=5°
+            setHeading((prev) => (Math.abs(v - prev) >= 5 ? v : prev));
+          });
+        }
+      } catch {}
+    })();
+    return () => { if (sub && sub.remove) sub.remove(); };
+  }, [isFocused]);
 
-  const getTimeText = (inc) => {
-    const timestamp = inc.createdAt || inc.created_at || Date.now();
-    const diffMins = Math.max(1, Math.round((Date.now() - timestamp) / 60000));
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.round(diffMins / 60);
-    return `${diffHours}h ago`;
+  useEffect(() => {
+    if (!isFocused) return;
+    const timer = setInterval(() => setSweepAngle((a) => (a + 6) % 360), 50);
+    return () => clearInterval(timer);
+  }, [isFocused]);
+
+  const projectToRadar = (incident) => {
+    const lat = myLat ?? 6.9271;
+    const lng = myLng ?? 79.8612;
+    const dist = calcDistance(lat, lng, incident.latitude, incident.longitude);
+    const bearing = calcBearing(lat, lng, incident.latitude, incident.longitude);
+    const scaledDist = Math.min(dist / MAX_RANGE_METERS, 1) * radius;
+    const angleRad = (bearing * Math.PI) / 180;
+    return {
+      x: center + scaledDist * Math.sin(angleRad),
+      y: center - scaledDist * Math.cos(angleRad),
+      distance: dist,
+    };
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <MeshStatusBar nodesInRange={peerCount} label={isOnline ? `Online • Mesh Active (${peerCount} nodes)` : undefined} />
-      <TopAppBar title="Nearby Reports" showBack={false} />
+    <Svg width={size} height={size}>
+      <Circle cx={center} cy={center} r={radius} fill={colors.radar.bg} />
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: spacing.marginMobile, gap: spacing.md }]}>
-        {/* RADAR VIEW */}
-        <View style={[styles.radarCard, { backgroundColor: isDark ? colors.surfaceContainerHigh : '#F4F5F5', borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]}>
+      <G rotation={-heading} origin={`${center}, ${center}`}>
+        <Circle cx={center} cy={center} r={radius * 0.33} fill="none" stroke={colors.radar.ringNear} strokeWidth={1} />
+        <Circle cx={center} cy={center} r={radius * 0.66} fill="none" stroke={colors.radar.ringMid} strokeWidth={1} />
+        <Circle cx={center} cy={center} r={radius} fill="none" stroke={colors.radar.ringMid} strokeWidth={1} />
+
+        <Line x1={center} y1={center - radius} x2={center} y2={center + radius} stroke={colors.radar.grid} strokeWidth={1} />
+        <Line x1={center - radius} y1={center} x2={center + radius} y2={center} stroke={colors.radar.grid} strokeWidth={1} />
+
+        <SvgText x={center} y={12} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">N</SvgText>
+        <SvgText x={center} y={size - 4} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">S</SvgText>
+        <SvgText x={8} y={center + 3} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">W</SvgText>
+        <SvgText x={size - 8} y={center + 3} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">E</SvgText>
+
+        {incidents.map((inc, idx) => {
+          const pos = projectToRadar(inc);
+          const pinColor = getPinColor(inc, colors);
+          return (
+            <G key={inc.id || idx}>
+              <Circle cx={pos.x} cy={pos.y} r={5} fill={pinColor} />
+              <Circle cx={pos.x} cy={pos.y} r={8} fill="none" stroke={pinColor} strokeWidth={1} opacity={0.4} />
+              <SvgText x={pos.x} y={pos.y + 18} fontSize={7} fill={colors.text.tertiary} textAnchor="middle">
+                {formatDistance(pos.distance)}
+              </SvgText>
+            </G>
+          );
+        })}
+      </G>
+
+      <G rotation={sweepAngle} origin={`${center}, ${center}`}>
+        <Line x1={center} y1={center} x2={center} y2={center - radius} stroke={colors.radar.sweep} strokeWidth={2} />
+        <Path
+          d={`M ${center} ${center} L ${center} ${center - radius} A ${radius} ${radius} 0 0 1 ${center + 12} ${center - radius + 3} Z`}
+          fill={colors.radar.sweep}
+          opacity={0.3}
+        />
+      </G>
+
+      <Circle cx={center} cy={center} r={5} fill={colors.radar.pinSelf} />
+      <Circle cx={center} cy={center} r={9} fill="none" stroke={colors.radar.pinSelf} strokeWidth={1.5} opacity={0.5} />
+    </Svg>
+  );
+});
+
+export default function NearbyScreen({ navigation }) {
+  const { colors, spacing, t, isResponder } = useApp();
+  const { incidents: contextIncidents, userLocation, refreshLocation } = useMeshSync();
+
+  const [location, setLocation] = useState(userLocation || null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState('all'); // all | sos | hazard | resolved
+  const [radarZoomed, setRadarZoomed] = useState(false);
+
+  const RADAR_SIZE = radarZoomed && isResponder ? RADAR_SIZE_RESPONDER : RADAR_SIZE_DEFAULT;
+
+  // Location only — compass heading lives inside <Radar/> now
+  useEffect(() => {
+    (async () => {
+      const loc = await getCurrentLocation({ showAlertOnDenied: false });
+      if (loc) setLocation(loc);
+    })();
+  }, []);
+
+  const withDistance = useMemo(
+    () =>
+      (contextIncidents || []).map((inc) => {
+        if (location && inc.latitude != null && inc.longitude != null) {
+          return { ...inc, _distance: calcDistance(location.latitude, location.longitude, inc.latitude, inc.longitude) };
+        }
+        return { ...inc, _distance: null };
+      }),
+    [contextIncidents, location]
+  );
+
+  // If no GPS fix, show all incidents (don't filter by distance)
+  const hasGps = withDistance.some((i) => i._distance != null);
+  const inRange = (i) => !hasGps || (i._distance != null && i._distance <= MAX_RANGE_METERS);
+
+  const urgentRequests = useMemo(
+    () =>
+      withDistance
+        .filter((i) => i.confidence_code <= 2 && i.report_type_code === 1 && inRange(i))
+        .sort((a, b) => {
+          if (b.severity_level !== a.severity_level) return (b.severity_level || 0) - (a.severity_level || 0);
+          return (a._distance || 0) - (b._distance || 0);
+        }),
+    [withDistance]
+  );
+
+  const communityReports = useMemo(
+    () => withDistance.filter((i) => i.confidence_code <= 2 && i.report_type_code !== 1 && inRange(i)),
+    [withDistance]
+  );
+
+  const recentlyResolved = useMemo(
+    () => withDistance.filter((i) => i.confidence_code === 3 || i.confidence_code === 4),
+    [withDistance]
+  );
+
+  const radarIncidents = useMemo(
+    () =>
+      withDistance.filter(
+        (i) => i.latitude != null && i.longitude != null && i._distance != null && i._distance <= MAX_RANGE_METERS
+      ),
+    [withDistance]
+  );
+
+  // Flatten sections into one list for FlatList virtualization —
+  // ScrollView mounted every card at once, which stalled tab switches.
+  const listData = useMemo(() => {
+    const items = [];
+    if (urgentRequests.length > 0 && (filter === 'all' || filter === 'sos')) {
+      items.push({ kind: 'header', key: 'h-urgent', icon: 'alert-circle', iconColor: colors.status.critical, title: t('nearby.urgentRequests'), count: urgentRequests.length });
+      for (const i of urgentRequests) items.push({ kind: 'card', key: `u-${i.id}`, item: i, urgent: true });
+    }
+    if (communityReports.length > 0 && (filter === 'all' || filter === 'hazard')) {
+      items.push({ kind: 'header', key: 'h-community', icon: 'people-circle-outline', iconColor: colors.status.warning, title: t('nearby.communityReports'), count: communityReports.length });
+      for (const i of communityReports) items.push({ kind: 'card', key: `c-${i.id}`, item: i });
+    }
+    if (recentlyResolved.length > 0 && (filter === 'all' || filter === 'resolved')) {
+      items.push({ kind: 'header', key: 'h-resolved', icon: 'checkmark-circle-outline', iconColor: colors.status.success, title: t('nearby.recentlyResolved'), count: recentlyResolved.length });
+      for (const i of recentlyResolved) items.push({ kind: 'card', key: `r-${i.id}`, item: i, resolved: true });
+    }
+    return items;
+  }, [urgentRequests, communityReports, recentlyResolved, filter, colors, t]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const loc = await getCurrentLocation({ showAlertOnDenied: false });
+    if (loc) setLocation(loc);
+    setRefreshing(false);
+  };
+
+  const handleCardPress = (item) => {
+    navigation.navigate('IncidentDetail', { incidentId: item.id });
+  };
+
+  const renderCard = (item, isUrgent, isResolved) => {
+    const iconName = CATEGORY_ICON[item.category_code] || 'alert-circle';
+    const pinColor = getPinColor(item, colors);
+    const title = getIncidentTitle(item);
+    const isOwn = item.creator_node_id === getNodeId();
+    const sevConfig = getSeverityConfig(item.severity_level || 2);
+
+    return (
+      <TouchableOpacity
+        key={item.id}
+        style={[
+          styles.card,
+          { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle },
+          isResolved && styles.cardResolved,
+          isUrgent && !isResolved && { borderLeftWidth: 3, borderLeftColor: sevConfig.color },
+        ]}
+        activeOpacity={0.7}
+        onPress={() => handleCardPress(item)}
+      >
+        <View style={styles.cardBody}>
+          <View style={[styles.iconWrap, { backgroundColor: pinColor + '1A' }, isResolved && { backgroundColor: colors.bg.tertiary }]}>
+            <Ionicons name={iconName} size={22} color={isResolved ? colors.text.tertiary : pinColor} />
+          </View>
+
+          <View style={styles.cardContent}>
+            <View style={styles.cardTitleRow}>
+              <Text style={[styles.cardTitle, { color: isResolved ? colors.text.tertiary : colors.text.primary }]} numberOfLines={1}>
+                {title}
+              </Text>
+              {isUrgent && !isResolved && (
+                <View style={[styles.severityBadge, { backgroundColor: sevConfig.color }]}>
+                  <Text style={styles.severityBadgeText}>{sevConfig.label}</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.cardMeta}>
+              <View style={styles.metaItem}>
+                <Ionicons name="navigate-outline" size={12} color={colors.text.tertiary} />
+                <Text style={[styles.metaText, { color: colors.text.tertiary }]}>
+                  {item._distance != null ? formatDistance(item._distance) : '—'}
+                </Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="time-outline" size={12} color={colors.text.tertiary} />
+                <Text style={[styles.metaText, { color: colors.text.tertiary }]}>{formatTimeAgo(item.created_at)}</Text>
+              </View>
+              {item.people_count > 1 && (
+                <View style={styles.metaItem}>
+                  <Ionicons name="people" size={12} color={colors.text.tertiary} />
+                  <Text style={[styles.metaText, { color: colors.text.tertiary }]}>{item.people_count}</Text>
+                </View>
+              )}
+            </View>
+            {isUrgent && !isResolved && (item.status_safety >= 1 || item.status_water >= 1 || item.status_injury >= 1) && (
+              <View style={styles.needsRow}>
+                {item.status_safety === 2 && (
+                  <View style={[styles.needChip, { backgroundColor: colors.status.critical + '33' }]}>
+                    <Ionicons name="warning" size={10} color={colors.status.critical} />
+                    <Text style={[styles.needText, { color: colors.status.critical }]}>Trapped</Text>
+                  </View>
+                )}
+                {item.status_safety === 1 && (
+                  <View style={[styles.needChip, { backgroundColor: colors.status.warning + '33' }]}>
+                    <Ionicons name="help-circle" size={10} color={colors.status.warning} />
+                    <Text style={[styles.needText, { color: colors.status.warning }]}>Need Help</Text>
+                  </View>
+                )}
+                {item.status_water === 2 && (
+                  <View style={[styles.needChip, { backgroundColor: colors.status.critical + '33' }]}>
+                    <Ionicons name="water" size={10} color={colors.status.critical} />
+                    <Text style={[styles.needText, { color: colors.status.critical }]}>No water</Text>
+                  </View>
+                )}
+                {item.status_water === 1 && (
+                  <View style={[styles.needChip, { backgroundColor: colors.status.warning + '33' }]}>
+                    <Ionicons name="water" size={10} color={colors.status.warning} />
+                    <Text style={[styles.needText, { color: colors.status.warning }]}>Low water</Text>
+                  </View>
+                )}
+                {item.status_injury === 2 && (
+                  <View style={[styles.needChip, { backgroundColor: colors.status.critical + '33' }]}>
+                    <Ionicons name="medkit" size={10} color={colors.status.critical} />
+                    <Text style={[styles.needText, { color: colors.status.critical }]}>Severe injury</Text>
+                  </View>
+                )}
+                {item.status_injury === 1 && (
+                  <View style={[styles.needChip, { backgroundColor: colors.status.warning + '33' }]}>
+                    <Ionicons name="medkit" size={10} color={colors.status.warning} />
+                    <Text style={[styles.needText, { color: colors.status.warning }]}>Minor injury</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+
+          {/* Respond action */}
+          {isResponder && isUrgent && !isResolved && !isOwn && (
+            <TouchableOpacity style={[styles.helpBtn, { backgroundColor: colors.accent.primary }]} onPress={() => handleCardPress(item)}>
+              <Text style={[styles.helpBtnText, { color: colors.accent.onPrimary }]}>Help</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderListItem = ({ item }) => {
+    if (item.kind === 'header') {
+      return (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderLeft}>
+              <Ionicons name={item.icon} size={18} color={item.iconColor} />
+              <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>{item.title}</Text>
+            </View>
+            <Text style={[styles.sectionCount, { color: colors.text.tertiary }]}>{item.count}</Text>
+          </View>
+        </View>
+      );
+    }
+    return <View style={styles.cardRow}>{renderCard(item.item, item.urgent, item.resolved)}</View>;
+  };
+
+  const listHeader = (
+    <>
+      {/* Radar section */}
+      <View style={styles.radarSection}>
           <View style={styles.radarHeader}>
-            <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>Local Mesh Radar</Text>
-            <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, opacity: 0.8 }]}>Live View</Text>
+            {isResponder && (
+              <TouchableOpacity
+                style={[styles.zoomBtn, { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle }]}
+                onPress={() => setRadarZoomed((z) => !z)}
+              >
+                <Ionicons name={radarZoomed ? 'contract' : 'expand'} size={14} color={colors.text.secondary} />
+              </TouchableOpacity>
+            )}
           </View>
-          <RadarView />
+
+          <View style={styles.radarContainer}>
+            <Radar
+              incidents={radarIncidents}
+              myLat={location?.latitude}
+              myLng={location?.longitude}
+              colors={colors}
+              size={RADAR_SIZE}
+            />
+          </View>
+
+          {/* Legend */}
+          <View style={styles.legend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.status.critical }]} />
+              <Text style={[styles.legendText, { color: colors.text.secondary }]}>{t('nearby.legendUrgent')}</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.status.warning }]} />
+              <Text style={[styles.legendText, { color: colors.text.secondary }]}>{t('nearby.legendHazard')}</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.status.success }]} />
+              <Text style={[styles.legendText, { color: colors.text.secondary }]}>{t('nearby.legendResolved')}</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.radar.pinSelf }]} />
+              <Text style={[styles.legendText, { color: colors.text.secondary }]}>{t('nearby.legendYou')}</Text>
+            </View>
+          </View>
         </View>
 
-        {/* URGENT REQUESTS (SOS) */}
-        <View style={{ gap: spacing.sm }}>
-          <View style={styles.sectionHeader}>
-            <MaterialIcons name="warning" size={20} color={colors.error} />
-            <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>
-              Urgent Requests ({urgentRequests.length})
-            </Text>
-          </View>
-
-          {urgentRequests.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: mutedPanel, borderRadius: radius.xl, borderColor: colors.outlineVariant }]}>
-              <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, textAlign: 'center' }]}>
-                No active SOS alerts nearby.
+        {/* Filter chips */}
+        <View style={styles.filterRow}>
+          {[
+            { key: 'all', label: t('nearby.filterAll'), icon: 'list' },
+            { key: 'sos', label: t('nearby.filterSos'), icon: 'medical' },
+            { key: 'hazard', label: t('nearby.filterHazard'), icon: 'warning' },
+            { key: 'resolved', label: t('nearby.filterResolved'), icon: 'checkmark-circle' },
+          ].map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              style={[
+                styles.filterBtn,
+                { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle },
+                filter === f.key && { backgroundColor: colors.accent.primary, borderColor: colors.accent.primary },
+              ]}
+              onPress={() => setFilter(f.key)}
+            >
+              <Ionicons name={f.icon} size={12} color={filter === f.key ? colors.accent.onPrimary : colors.text.secondary} />
+              <Text style={[styles.filterText, { color: colors.text.secondary }, filter === f.key && { color: colors.accent.onPrimary, fontWeight: '700' }]}>
+                {f.label}
               </Text>
-            </View>
-          ) : (
-            urgentRequests.map((r) => {
-              const landmarkName = r.landmark_name ?? r.landmarkName;
-              const details = r.details || r.description;
-              const title = r.title;
-              return (
-                <View key={r.id} style={[styles.urgentCard, { backgroundColor: cardSurface, borderColor: colors.error, borderRadius: radius.xl }]}> 
-                  <View style={styles.urgentHeader}>
-                    <View style={[styles.urgentIconWrap, { backgroundColor: isDark ? '#3B3B3B' : '#FEE2E2' }]}>
-                      <MaterialIcons name="priority-high" size={24} color={colors.error} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[typography.headlineMd, { color: colors.onSurface }]}>
-                        {landmarkName?.startsWith("SOS:") ? landmarkName : (title || 'Emergency Assistance Needed')}
-                      </Text>
-                      <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                        {getDistanceText(r)} • {getTimeText(r)}
-                      </Text>
-                    </View>
-                    <View style={[styles.sosBadge, { backgroundColor: colors.error, borderRadius: radius.md }]}>
-                      <Text style={[typography.labelLg, { color: '#FFFFFF', fontWeight: '700' }]}>SOS</Text>
-                    </View>
-                  </View>
-
-                  {landmarkName && !landmarkName.startsWith("SOS:") ? (
-                    <View style={styles.locationTagRow}>
-                      <MaterialIcons name="place" size={16} color={colors.error} />
-                      <Text style={[typography.labelLg, { color: colors.onSurface }]}>
-                        Location Tag: {landmarkName}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, marginTop: 4 }]}>
-                    {details || 'Immediate emergency help requested by nearby mesh node.'}
-                  </Text>
-
-                  <TouchableOpacity
-                    style={[styles.helpButton, { backgroundColor: isDark ? colors.surfaceContainerLowest : '#F7F7F7', borderColor: colors.outlineVariant, borderRadius: radius.md }]}
-                    onPress={() => Alert.alert('Help Offer Transmitted', 'Your availability will be announced over the mesh.')}
-                  >
-                    <MaterialIcons name="handshake" size={18} color={colors.onSurface} />
-                    <Text style={[typography.labelLg, { color: colors.onSurface }]}>I can help</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* COMMUNITY REPORTS (HAZARDS & STATUS UPDATES) */}
-        <View style={{ gap: spacing.sm }}>
-          <View style={styles.sectionHeader}>
-            <MaterialIcons name="groups" size={20} color={colors.onSurface} />
-            <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>
-              Community Reports ({communityReports.length})
-            </Text>
-          </View>
+    </>
+  );
 
-          {communityReports.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: mutedPanel, borderRadius: radius.xl, borderColor: colors.outlineVariant }]}>
-              <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, textAlign: 'center' }]}>
-                No community hazard or status reports active.
-              </Text>
+  return (
+    <View style={[styles.container, { backgroundColor: colors.bg.primary }]}>
+      <FlatList
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        data={listData}
+        keyExtractor={(item) => item.key}
+        renderItem={renderListItem}
+        ListHeaderComponent={listHeader}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        ListEmptyComponent={
+          (contextIncidents || []).length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="navigate-outline" size={48} color={colors.text.tertiary} />
+              <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>{t('nearby.noIncidents')}</Text>
+              <Text style={[styles.emptySubtext, { color: colors.text.tertiary }]}>{t('nearby.noIncidentsDesc')}</Text>
             </View>
-          ) : (
-            communityReports.map((r) => {
-              const reportTypeCode = r.report_type_code ?? r.reportTypeCode;
-              const categoryCode = r.category_code ?? r.categoryCode;
-              const statusSafety = r.status_safety ?? r.statusSafety;
-              const statusWater = r.status_water ?? r.statusWater;
-              const statusInjury = r.status_injury ?? r.statusInjury;
-              const peopleCount = r.people_count ?? r.peopleCount ?? 1;
-              const severityLevel = r.severity_level ?? r.severityLevel ?? r.severity;
-              const landmarkName = r.landmark_name ?? r.landmarkName;
-              const creatorNodeId = r.creator_node_id ?? r.creatorNodeId;
-              const details = r.details || r.description;
-
-              const isHazard = reportTypeCode === REPORT_TYPE.HAZARD || categoryCode != null;
-              const isSos = reportTypeCode === REPORT_TYPE.SOS;
-              const isStatus = !isSos && (reportTypeCode === REPORT_TYPE.STATUS || statusSafety != null);
-
-              const hazardInfo = HAZARD_MAP[categoryCode] || { label: 'Hazard Report', icon: 'warning' };
-              const safetyInfo = SAFETY_MAP[statusSafety] || { label: 'Status Update', color: colors.primary };
-
-              const severityText = SEVERITY_LABEL[severityLevel] || 'Low';
-              const severityColor = SEVERITY_COLOR[severityLevel] || colors.primary;
-
-              return (
-                <View key={r.id} style={[styles.reportCard, { backgroundColor: mutedPanel, borderColor: colors.outlineVariant, borderRadius: radius.xl }]}>
-                  <View style={styles.reportRow}>
-                    <View style={[styles.reportIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#E9EBEB' }]}>
-                      <MaterialIcons
-                        name={isHazard ? hazardInfo.icon : (isSos ? 'sos' : (isStatus ? 'health-and-safety' : 'warning'))}
-                        size={22}
-                        color={(isHazard || isSos) ? severityColor : safetyInfo.color}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                        <Text style={[typography.headlineMd, { color: colors.onSurface, fontSize: 16 }]}>
-                          {isHazard ? (landmarkName || hazardInfo.label) : (isSos ? (landmarkName || 'SOS Emergency') : (isStatus ? `Status: ${safetyInfo.label}` : (r.title || 'Community Report')))}
-                        </Text>
-                        {(isHazard || isSos) ? (
-                          <View style={[styles.badge, { backgroundColor: severityColor + '22', borderColor: severityColor }]}>
-                            <Text style={[typography.labelMd, { color: severityColor, fontWeight: '700' }]}>{severityText}</Text>
-                          </View>
-                        ) : isStatus ? (
-                          <View style={[styles.badge, { backgroundColor: safetyInfo.color + '22', borderColor: safetyInfo.color }]}>
-                            <Text style={[typography.labelMd, { color: safetyInfo.color, fontWeight: '700' }]}>{safetyInfo.label}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-
-                      <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, marginTop: 2 }]}>
-                        {getDistanceText(r)} • {getTimeText(r)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Details / Content */}
-                  {isStatus ? (
-                    <View style={{ gap: 4, marginTop: 4 }}>
-                      <Text style={[typography.bodyMd, { color: colors.onSurface }]}>
-                        {WATER_MAP[statusWater] || 'Water: Normal'} • {INJURY_MAP[statusInjury] || 'No Injuries'} • {peopleCount} People
-                      </Text>
-                      {landmarkName && (
-                        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                          Location: {landmarkName}
-                        </Text>
-                      )}
-                    </View>
-                  ) : (
-                    <View style={{ gap: 4, marginTop: 4 }}>
-                      <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant }]}>
-                        {details || `${hazardInfo.label} reported in this mesh sector.`}
-                      </Text>
-                      {landmarkName && (
-                        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                          Location: {landmarkName}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-
-                  <View style={styles.reportFooter}>
-                    <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                      Origin Node: {creatorNodeId ? creatorNodeId.slice(-8) : 'Nearby'}
-                    </Text>
-                    <TouchableOpacity
-                      style={[styles.detailsBtn, { borderColor: colors.outlineVariant, borderRadius: radius.md }]}
-                      onPress={() => Alert.alert('Report Summary', `${isHazard ? hazardInfo.label : 'Status Update'}\nLocation: ${getDistanceText(r)}\nDetails: ${details || landmarkName || 'None'}`)}
-                    >
-                      <Text style={[typography.labelLg, { color: colors.onSurface }]}>Details</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-
-        {/* RECENTLY RESOLVED */}
-        {resolvedReports.length > 0 && (
-          <View style={{ gap: spacing.sm, opacity: 0.8 }}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="check-circle" size={20} color={colors.onSurfaceVariant} />
-              <Text style={[typography.labelLg, { color: colors.onSurfaceVariant, textTransform: 'uppercase' }]}>Recently Resolved</Text>
-            </View>
-            {resolvedReports.map((r) => {
-              const landmarkName = r.landmark_name ?? r.landmarkName;
-              return (
-                <View key={r.id} style={[styles.resolvedRow, { backgroundColor: mutedPanel, borderColor: colors.outlineVariant, borderRadius: radius.md }]}>
-                  <View style={[styles.resolvedIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#EAEBEB' }]}>
-                    <MaterialIcons name="check" size={18} color={colors.onSurfaceVariant} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[typography.labelLg, { color: colors.onSurfaceVariant, textDecorationLine: 'line-through' }]}>
-                      {landmarkName || r.title || 'Resolved Incident'}
-                    </Text>
-                    <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>
-                      Resolved • {getTimeText(r)}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+          ) : null
+        }
+        ListFooterComponent={<View style={{ height: spacing.xl }} />}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 18, paddingBottom: 128 },
-  radarCard: { borderWidth: 1 },
-  radarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  urgentCard: { borderWidth: 2, padding: 16 },
-  urgentHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  urgentIconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  sosBadge: { paddingHorizontal: 12, paddingVertical: 6 },
-  locationTagRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  helpButton: { marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, paddingVertical: 12 },
-  reportCard: { borderWidth: 1, padding: 14 },
-  reportRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-  reportIconWrap: { width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  badge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  reportFooter: { marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  detailsBtn: { borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12 },
-  resolvedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderWidth: 1 },
-  resolvedIcon: { width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  emptyCard: { padding: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 32 },
+  radarSection: { alignItems: 'center', paddingTop: 16, paddingBottom: 8 },
+  radarHeader: { alignItems: 'center', marginBottom: 8, flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  zoomBtn: {
+    width: 32, height: 32, borderRadius: 16, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  radarContainer: { alignItems: 'center', justifyContent: 'center' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginTop: 12 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 11 },
+  filterRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, paddingVertical: 8 },
+  filterBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10,
+    paddingVertical: 6, borderRadius: 999, borderWidth: 1,
+  },
+  filterText: { fontSize: 11, fontWeight: '600' },
+  section: { paddingHorizontal: 20, marginTop: 16 },
+  cardRow: { paddingHorizontal: 20 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionTitle: { fontSize: 16, fontWeight: '700' },
+  sectionCount: { fontSize: 12, fontWeight: '700' },
+  card: { borderRadius: 16, borderWidth: 1, padding: 12, marginBottom: 8 },
+  cardResolved: { opacity: 0.55 },
+  cardBody: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  cardContent: { flex: 1 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  cardTitle: { fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  severityBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  severityBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
+  cardMeta: { flexDirection: 'row', gap: 12, marginTop: 4 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  metaText: { fontSize: 11 },
+  needsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
+  needChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  needText: { fontSize: 10, fontWeight: '700' },
+  helpBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  helpBtnText: { fontSize: 12, fontWeight: '700' },
+  emptyState: { alignItems: 'center', paddingVertical: 48, gap: 8, paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 16, fontWeight: '700' },
+  emptySubtext: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
 });

@@ -16,21 +16,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../theme/ThemeContext';
 import { useMeshSync } from '../context/MeshSyncContext';
-import { ROLE, setLastCloudSyncHlc, clearActiveSosIncidentId } from '../backend/store/hotState';
-import { formatHlc } from '../backend/shared/hlc';
+import { useApp } from '../context/AppContext';
+import { LANGS } from '../i18n/translations';
+import {
+  ROLE,
+  resetAll,
+  clearActiveSosIncidentId,
+  setLastCloudSyncHlc,
+  markProdCleanupComplete,
+} from '../backend/store/hotState';
 import { getStore } from '../backend/store/eventStore';
-import TopAppBar from '../components/TopAppBar';
+import { formatHlc } from '../backend/shared/hlc';
 import { clearResponderSession } from '../utils/storage';
+import TopAppBar from '../components/TopAppBar';
 
 const PROFILE_STORAGE_KEY = '@meshsync_profile';
-
-const EMPTY_PROFILE = {
-  fullName: '',
-  nic: '',
-  phone: '',
-  homeLandmark: '',
-  landmark: '',
-};
+const EMPTY_PROFILE = { fullName: '', nic: '', phone: '', homeLandmark: '' };
 
 export default function ProfileScreen({ navigation }) {
   const {
@@ -42,7 +43,8 @@ export default function ProfileScreen({ navigation }) {
     toggleScheme,
   } = useTheme();
 
-  const { nodeId, isRegistered, activeRole, switchRole, logoutResponder, refreshUserProfile, myEvents, relayedCount } = useMeshSync();
+  const { nodeId, isRegistered, activeRole, myEvents, relayedCount, switchRole, logoutResponder } = useMeshSync();
+  const { lang, setLang } = useApp();
   const [profile, setProfile] = useState(null);
   const [relayAuto, setRelayAuto] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
@@ -89,7 +91,7 @@ export default function ProfileScreen({ navigation }) {
   const resetAppData = () => {
     Alert.alert(
       'Reset App Data',
-      'This will erase all local profile, reports, and session data on this device.',
+      'This will erase all local data on this device and return to onboarding.',
       [
         {
           text: 'Cancel',
@@ -101,21 +103,19 @@ export default function ProfileScreen({ navigation }) {
           onPress: async () => {
             try {
               await AsyncStorage.removeItem(PROFILE_STORAGE_KEY);
-              await clearResponderSession();
-              clearActiveSosIncidentId();
-              setLastCloudSyncHlc(formatHlc(Date.now(), 0, '00000000'));
+              await AsyncStorage.removeItem('@meshsync_responder_session');
               const store = getStore();
               if (typeof store.clearAll === 'function') {
                 await store.clearAll();
               }
-              logoutResponder();
-              if (refreshUserProfile) {
-                await refreshUserProfile();
-              }
+              resetAll(); // clears role, registration, node_id, saved status/landmark
+              clearActiveSosIncidentId();
+              setLastCloudSyncHlc(formatHlc(Date.now(), 0, '00000000'));
+              markProdCleanupComplete();
 
               Alert.alert(
                 'Data Reset',
-                'Your local profile and reports have been cleared.'
+                'All local data cleared. You can choose a role again.'
               );
 
               navigation.replace('Onboarding');
@@ -132,6 +132,25 @@ export default function ProfileScreen({ navigation }) {
       ]
     );
   };
+
+  const handleSwitchRole = () => {
+    const next = activeRole === ROLE.CIVILIAN ? ROLE.CIVILIAN_RESPONDER : ROLE.CIVILIAN;
+    switchRole(next);
+    Alert.alert(
+      next === ROLE.CIVILIAN_RESPONDER ? 'Responder Mode' : 'Civilian Mode',
+      next === ROLE.CIVILIAN_RESPONDER
+        ? 'You now see nearby incidents and can respond to them.'
+        : 'You are back in civilian mode. The SOS button is available.'
+    );
+  };
+
+  const isCivilianRole = activeRole === ROLE.CIVILIAN;
+  const isCivResponder = activeRole === ROLE.CIVILIAN_RESPONDER;
+  const roleLabel = isRegistered
+    ? 'Authorized Responder'
+    : isCivResponder
+    ? 'Civilian Responder'
+    : 'Civilian';
 
   // Avoid rendering profile fields before AsyncStorage finishes.
   if (!profile) {
@@ -205,6 +224,45 @@ export default function ProfileScreen({ navigation }) {
           gap: spacing.lg,
         }}
       >
+        {/* LANGUAGE */}
+        <View
+          style={[
+            {
+              backgroundColor: colors.surfaceContainerHigh,
+              borderColor: colors.outlineVariant,
+              borderRadius: radius.xl,
+              padding: spacing.md,
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <MaterialIcons name="language" size={18} color={colors.onSurfaceVariant} />
+            <Text style={[typography.labelLg, { color: colors.onSurface }]}>Language</Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {LANGS.map((l) => (
+              <TouchableOpacity
+                key={l.code}
+                onPress={() => setLang(l.code)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: radius.md,
+                  borderWidth: 2,
+                  alignItems: 'center',
+                  borderColor: lang === l.code ? colors.primary : colors.outlineVariant,
+                  backgroundColor: lang === l.code ? colors.primaryContainer : colors.surfaceContainerLow,
+                }}
+              >
+                <Text style={[typography.labelMd, { color: lang === l.code ? colors.onPrimaryContainer : colors.onSurfaceVariant }]}>
+                  {l.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* PROFILE SUMMARY */}
         <View
           style={[
@@ -263,6 +321,81 @@ export default function ProfileScreen({ navigation }) {
             />
           </TouchableOpacity>
         </View>
+
+        {/* ROLE SWITCH — Civilian ↔ Civilian Responder (authorized users see their badge only) */}
+        {!isRegistered && (
+          <View
+            style={[
+              styles.responderCard,
+              {
+                backgroundColor: colors.surfaceContainer,
+                borderColor: colors.outlineVariant,
+                borderRadius: radius.xl,
+                padding: spacing.md,
+              },
+            ]}
+          >
+            <View style={styles.rowGap}>
+              <MaterialIcons
+                name={isCivilianRole ? 'person' : 'pan-tool'}
+                size={20}
+                color={colors.primary}
+              />
+
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    typography.labelLg,
+                    { color: colors.onSurface },
+                  ]}
+                >
+                  Role: {roleLabel}
+                </Text>
+
+                <Text
+                  style={[
+                    typography.bodyMd,
+                    {
+                      color: colors.onSurfaceVariant,
+                      marginTop: 4,
+                    },
+                  ]}
+                >
+                  {isCivilianRole
+                    ? 'SOS button active. Switch to respond to nearby incidents instead.'
+                    : 'Viewing nearby incidents with Help Now. Switch back to send SOS.'}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[
+                styles.responderButton,
+                {
+                  backgroundColor: colors.primary,
+                  borderRadius: radius.md,
+                },
+              ]}
+              onPress={handleSwitchRole}
+            >
+              <Text
+                style={[
+                  typography.labelLg,
+                  { color: colors.onPrimary },
+                ]}
+              >
+                {isCivilianRole ? 'Switch to Civilian Responder' : 'Switch to Civilian'}
+              </Text>
+
+              <MaterialIcons
+                name="swap-horiz"
+                size={18}
+                color={colors.onPrimary}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* RESPONDER */}
         <View
@@ -323,7 +456,7 @@ export default function ProfileScreen({ navigation }) {
                 switchRole(ROLE.RESPONDER);
                 navigation.navigate('Responder', { screen: 'AssignedMeshes' });
               } else {
-                navigation.navigate('Responder', { screen: 'ResponderLogin' });
+                navigation.navigate('Responder');
               }
             }}
           >
@@ -342,6 +475,42 @@ export default function ProfileScreen({ navigation }) {
               color={colors.onPrimary}
             />
           </TouchableOpacity>
+
+          {isRegistered && (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[
+                styles.responderButton,
+                {
+                  backgroundColor: colors.surfaceContainerLow,
+                  borderColor: colors.error,
+                  borderWidth: 1,
+                  borderRadius: radius.md,
+                  marginTop: spacing.xs,
+                },
+              ]}
+              onPress={async () => {
+                logoutResponder();
+                await clearResponderSession();
+                Alert.alert('Logged Out', 'Responder session ended.');
+              }}
+            >
+              <Text
+                style={[
+                  typography.labelLg,
+                  { color: colors.error },
+                ]}
+              >
+                Log Out (End of Shift)
+              </Text>
+
+              <MaterialIcons
+                name="logout"
+                size={18}
+                color={colors.error}
+              />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* PERSONAL DETAILS */}

@@ -1,230 +1,243 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { useTheme } from '../theme/ThemeContext';
-import { useMeshSync } from '../context/MeshSyncContext';
-import { HAZARD_CATEGORY, SEVERITY } from '../backend/shared/enums';
-import TopAppBar from '../components/TopAppBar';
-import PrimaryButton from '../components/PrimaryButton';
+// Report Hazard Screen — ported from the New Test design (user-fixed version):
+// cached location, auto-generated landmark ("Flood near temple", ≤30 chars),
+// category grid + severity pills, vibration feedback, fixed send button.
 
-const hazardCategories = [
-  { id: 'flood', label: 'Flood', icon: 'water' },
-  { id: 'landslide', label: 'Landslide', icon: 'terrain' },
-  { id: 'storm', label: 'Cyclone/Storm', icon: 'cyclone' },
-  { id: 'fire', label: 'Fire', icon: 'local-fire-department' },
-  { id: 'medical', label: 'Medical', icon: 'medical-services' },
-  { id: 'damage', label: 'Structural Damage', icon: 'home-repair-service' },
-  { id: 'road', label: 'Road Blocked', icon: 'block' },
-  { id: 'other', label: 'Other', icon: 'more-horiz' },
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Vibration,
+  ScrollView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useApp } from '../context/AppContext';
+import { useMeshSync } from '../context/MeshSyncContext';
+import { getLandmark } from '../backend/store/hotState';
+import { HAZARD_CATEGORY, SEVERITY, REPORT_TYPE } from '../backend/shared/enums';
+import { getCurrentLocation } from '../utils/location';
+
+const CATEGORIES = [
+  { code: 1, labelKey: 'hazard.flood', icon: 'water' },
+  { code: 2, labelKey: 'hazard.landslide', icon: 'earth' },
+  { code: 3, label: 'Storm', labelKey: 'hazard.cyclone', icon: 'thunderstorm' },
+  { code: 4, labelKey: 'hazard.fire', icon: 'flame' },
+  { code: 5, labelKey: 'hazard.medical', icon: 'medkit' },
+  { code: 6, labelKey: 'hazard.structural', icon: 'business' },
+  { code: 7, labelKey: 'hazard.road', icon: 'car' },
+  { code: 0, labelKey: 'hazard.other', icon: 'ellipsis-horizontal' },
 ];
 
-const SEVERITIES = ['Low', 'Medium', 'High'];
+const SEVERITIES = [
+  { level: 1, labelKey: 'hazard.low', colorKey: 'success' },
+  { level: 2, labelKey: 'hazard.medium', colorKey: 'warning' },
+  { level: 3, labelKey: 'hazard.high', colorKey: 'critical' },
+];
 
 const CATEGORY_MAP = {
-  flood: HAZARD_CATEGORY.FLOOD,
-  landslide: HAZARD_CATEGORY.LANDSLIDE,
-  storm: HAZARD_CATEGORY.STORM,
-  fire: HAZARD_CATEGORY.FIRE,
-  medical: HAZARD_CATEGORY.MEDICAL,
-  damage: HAZARD_CATEGORY.STRUCTURAL,
-  road: HAZARD_CATEGORY.STRUCTURAL,
-  other: HAZARD_CATEGORY.NONE,
+  0: 0,
+  1: 1,
+  2: 2,
+  3: 3,
+  4: 4,
+  5: 5,
+  6: 6,
+  7: 6, // road block → structural
 };
 
-const SEVERITY_MAP = {
-  Low: SEVERITY.LOW,
-  Medium: SEVERITY.MEDIUM,
-  High: SEVERITY.HIGH,
-};
+export default function ReportHazardScreen({ navigation }) {
+  const { colors, spacing, radius, typography, t } = useApp();
+  const { reportHazard, userProfile } = useMeshSync();
 
-export default function ReportHazardScreen() {
-  const navigation = useNavigation();
-  const { colors, spacing, radius, typography, isDark } = useTheme();
-  const { reportHazard, isOnline, userProfile } = useMeshSync();
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedSeverity, setSelectedSeverity] = useState(2);
+  const [location, setLocation] = useState(null);
+  const [isSending, setIsSending] = useState(false);
 
-  const [category, setCategory] = useState(null);
-  const [title, setTitle] = useState('');
-  const [details, setDetails] = useState('');
-  const [locationTag, setLocationTag] = useState('');
-  const [severity, setSeverity] = useState('Medium');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Grab cached location on mount (fast); refresh silently
+  useEffect(() => {
+    (async () => {
+      try {
+        const loc = await getCurrentLocation({ showAlertOnDenied: false });
+        if (loc) setLocation(loc);
+      } catch {}
+    })();
+  }, []);
 
-  const submit = async () => {
-    if (!category) {
-      Alert.alert('Select a category', 'Please choose a hazard category before sending.');
+  const handleSend = async () => {
+    if (selectedCategory === null) {
+      Alert.alert(t('hazard.category') || 'Category', t('hazard.selectCategory') || 'Please choose a hazard category before sending.');
       return;
     }
-    setIsSubmitting(true);
+
+    setIsSending(true);
     try {
-      const categoryCode = CATEGORY_MAP[category] ?? HAZARD_CATEGORY.NONE;
-      const severityLevel = SEVERITY_MAP[severity] ?? SEVERITY.MEDIUM;
+      // Auto-generate landmark from category + saved landmark: "Flood near temple" (§3, ≤30 chars)
+      const cat = CATEGORIES.find((c) => c.code === selectedCategory);
+      const userLandmark = getLandmark();
+      const catLabel = cat ? t(cat.labelKey) : t('hazard.title') || 'Hazard';
+      const landmarkName = userLandmark
+        ? `${catLabel} ${userLandmark}`.substring(0, 30)
+        : catLabel;
 
       const result = await reportHazard({
-        categoryCode,
-        title: title.trim() || undefined,
-        details: details.trim() || undefined,
-        severityLevel,
-        landmarkName: locationTag.trim() || undefined,
+        // Map UI category codes (0-7, incl. Road Block=7) to event codes (0-6)
+        categoryCode: CATEGORY_MAP[selectedCategory] ?? 0,
+        severityLevel: selectedSeverity,
+        latitude: location?.latitude,
+        longitude: location?.longitude,
+        landmarkName,
       });
 
       if (result.success) {
-        Alert.alert('Report Broadcasted', 'Your hazard report has been added to the mesh network.', [
+        Vibration.vibrate(200);
+        Alert.alert(t('hazard.reportSent') || 'Report Broadcasted', t('hazard.reportSentDesc') || 'Your hazard report has been added to the mesh network.', [
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to send hazard report. Please try again.');
       }
+    } catch (err) {
+      console.error('[ReportHazard] send failed:', err);
+      Alert.alert('Error', 'Failed to send hazard report. Please try again.');
     } finally {
-      setIsSubmitting(false);
+      setIsSending(false);
     }
   };
 
+  const locationText = location
+    ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
+    : t('hazard.gettingLocation') || 'Getting location…';
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <TopAppBar title="Report a Hazard" />
+    <View style={[styles.container, { backgroundColor: colors.bg.primary }]}>
+      {/* Offline mesh status bar */}
+      <View style={[styles.offlineBar, { backgroundColor: colors.status.infoDim }]}>
+        <Ionicons name="hardware-chip" size={16} color={colors.accent.primary} />
+        <Text style={[styles.offlineText, { color: colors.accent.primary }]}>{t('hazard.offlineMesh') || 'Offline • Mesh Active'}</Text>
+      </View>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.marginMobile, paddingTop: spacing.md, paddingBottom: 140 }}>
-        <View style={[styles.offlineBanner, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.lg }]}>
-          <MaterialIcons name={isOnline ? "cloud-done" : "cloud-off"} size={18} color={colors.onSurface} />
-          <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>
-            {isOnline ? "Online • Mesh Active" : "Offline • Mesh Active"}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={[styles.screenTitle, { color: colors.text.primary }]}>{t('hazard.title') || 'Report a Hazard'}</Text>
+        <Text style={[styles.screenSubtitle, { color: colors.text.secondary }]}>{t('hazard.subtitle') || 'Warn others about dangers in your area'}</Text>
+
+        {/* Category grid */}
+        <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>{t('hazard.category') || 'Category'}</Text>
+        <View style={styles.categoryGrid}>
+          {CATEGORIES.map((cat) => {
+            const isSelected = selectedCategory === cat.code;
+            return (
+              <TouchableOpacity
+                key={cat.code}
+                style={[
+                  styles.categoryCard,
+                  { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle },
+                  isSelected && { borderColor: colors.accent.primary, borderWidth: 2 },
+                ]}
+                onPress={() => setSelectedCategory(cat.code)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={cat.icon} size={28} color={isSelected ? colors.accent.primary : colors.text.tertiary} />
+                <Text style={[styles.categoryLabel, { color: isSelected ? colors.accent.primary : colors.text.secondary }]}>
+                  {t(cat.labelKey)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Location note */}
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={14} color={colors.text.tertiary} />
+          <Text style={[styles.locationText, { color: colors.text.tertiary }]}>
+            {location ? `${t('hazard.reportingFrom') || 'Reporting from'}: ${locationText}` : t('hazard.gettingLocation') || 'Getting location…'}
           </Text>
         </View>
 
-        <View style={{ marginBottom: spacing.xl }}>
-          <View style={styles.rowBetween}>
-            <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase' }]}>Select Category</Text>
-            <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Mandatory</Text>
-          </View>
-          <View style={[styles.grid, { marginTop: spacing.md, gap: spacing.sm }]}>
-            {hazardCategories.map((cat) => {
-              const active = category === cat.id;
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  onPress={() => setCategory(cat.id)}
-                  style={[
-                    styles.categoryCard,
-                    {
-                      backgroundColor: active
-                        ? (isDark ? '#1C2E3D' : '#E0F2FE')
-                        : colors.surfaceContainerHigh,
-                      borderColor: active ? colors.primary : colors.outlineVariant,
-                      borderWidth: active ? 2 : 1,
-                      borderRadius: radius.xl,
-                      padding: spacing.md,
-                      position: 'relative',
-                    },
-                  ]}
-                >
-                  {active && (
-                    <View style={styles.categoryCheckBadge}>
-                      <MaterialIcons name="check-circle" size={18} color={colors.primary} />
-                    </View>
-                  )}
-                  <MaterialIcons
-                    name={cat.icon}
-                    size={28}
-                    color={active ? colors.primary : colors.onSurface}
-                    style={{ marginBottom: 8 }}
-                  />
-                  <Text style={[typography.labelLg, { color: colors.onSurface, fontWeight: active ? '700' : '400' }]}>
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={[styles.locationNote, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.md, marginBottom: spacing.xl }]}>
-          <MaterialIcons name="my-location" size={20} color={colors.onSurface} />
-          <Text style={[typography.bodyMd, { color: colors.onSurfaceVariant, flex: 1 }]}>
-            Your high-precision location will be captured automatically via GPS/Mesh relay.
-          </Text>
-        </View>
-
-        <View style={{ gap: spacing.lg, marginBottom: spacing.xl }}>
-          <Field
-            label="Location Name / Landmark (Optional)"
-            value={locationTag}
-            onChangeText={setLocationTag}
-            placeholder="e.g. Near River Bridge, Main Street Junction"
-          />
-          <Field
-            label="Short Title (Optional)"
-            value={title}
-            onChangeText={setTitle}
-            placeholder="e.g. Broken power line near park"
-          />
-          <Field
-            label="Details (Optional)"
-            value={details}
-            onChangeText={setDetails}
-            placeholder="Provide extra context for emergency responders..."
-            multiline
-          />
-        </View>
-
-        <View style={{ marginBottom: spacing.xl }}>
-          <Text style={[typography.labelLg, { color: colors.onSurface, marginBottom: spacing.md }]}>Severity Level</Text>
-          <View style={[styles.severityTrack, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: 4 }]}>
-            {SEVERITIES.map((level) => {
-              const active = severity === level;
-              return (
-                <TouchableOpacity
-                  key={level}
-                  onPress={() => setSeverity(level)}
-                  style={[styles.severityBtn, { borderRadius: radius.md, backgroundColor: active ? (isDark ? colors.surfaceContainerHighest : '#FFFFFF') : 'transparent' }]}
-                >
-                  <Text style={[typography.labelLg, { color: colors.onSurface, fontWeight: active ? '700' : '400' }]}>{level}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+        {/* Severity */}
+        <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>{t('hazard.severity') || 'Severity'}</Text>
+        <View style={styles.severityRow}>
+          {SEVERITIES.map((sev) => {
+            const isSelected = selectedSeverity === sev.level;
+            const sevColor = colors.status[sev.colorKey];
+            const sevDimColor = colors.status[`${sev.colorKey}Dim`];
+            return (
+              <TouchableOpacity
+                key={sev.level}
+                style={[
+                  styles.severityPill,
+                  {
+                    backgroundColor: isSelected ? sevDimColor : colors.bg.secondary,
+                    borderColor: isSelected ? sevColor : colors.border.subtle,
+                  },
+                ]}
+                onPress={() => setSelectedSeverity(sev.level)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.severityText, { color: isSelected ? sevColor : colors.text.secondary }]}>
+                  {t(sev.labelKey)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ScrollView>
 
-      <View style={[styles.actionArea, { paddingHorizontal: spacing.marginMobile, backgroundColor: colors.background }]}>
-        <PrimaryButton label="Send Report" icon="send" onPress={submit} />
+      {/* Send button — fixed at bottom */}
+      <View style={[styles.sendContainer, { backgroundColor: colors.bg.primary, borderTopColor: colors.border.subtle }]}>
+        <TouchableOpacity
+          style={[styles.sendButton, { backgroundColor: colors.accent.primary }, isSending && { opacity: 0.6 }]}
+          onPress={handleSend}
+          disabled={isSending}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="send" size={20} color={colors.accent.onPrimary} />
+          <Text style={[styles.sendButtonText, { color: colors.accent.onPrimary }]}>
+            {isSending ? t('common.sending') || 'Sending…' : t('hazard.sendReport') || 'Send Report'}
+          </Text>
+        </TouchableOpacity>
       </View>
-    </SafeAreaView>
-  );
-}
-
-function Field({ label, ...props }) {
-  const { colors, spacing, radius, typography } = useTheme();
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <Text style={[typography.labelLg, { color: colors.onSurface }]}>{label}</Text>
-      <TextInput
-        placeholderTextColor={colors.onSurfaceVariant + '80'}
-        style={[
-          styles.input,
-          {
-            borderColor: colors.outlineVariant,
-            backgroundColor: colors.surfaceContainerHigh,
-            borderRadius: radius.md,
-            color: colors.onSurface,
-            height: props.multiline ? 100 : 48,
-            textAlignVertical: props.multiline ? 'top' : 'center',
-          },
-        ]}
-        {...props}
-      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  offlineBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, padding: 8 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  categoryCard: { width: '48%', borderWidth: 1, marginBottom: 8 },
-  categoryCheckBadge: { position: 'absolute', top: 10, right: 10 },
-  locationNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderWidth: 1, padding: 16 },
-  severityTrack: { flexDirection: 'row', borderWidth: 1 },
-  severityBtn: { flex: 1, paddingVertical: 8, alignItems: 'center' },
-  input: { borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
-  actionArea: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingVertical: 16, paddingBottom: 32 },
+  container: { flex: 1 },
+  offlineBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 8, paddingHorizontal: 16, gap: 8,
+  },
+  offlineText: { fontSize: 12, fontWeight: '600', letterSpacing: 0.3 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 },
+  screenTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
+  screenSubtitle: { fontSize: 14, marginTop: 4, lineHeight: 20 },
+  sectionLabel: { fontSize: 14, fontWeight: '700', marginTop: 24, marginBottom: 12 },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  categoryCard: {
+    width: '48%', aspectRatio: 1.1, borderRadius: 16, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10,
+  },
+  categoryLabel: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 16 },
+  locationText: { fontSize: 12 },
+  severityRow: { flexDirection: 'row', gap: 8 },
+  severityPill: {
+    flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 2, alignItems: 'center',
+  },
+  severityText: { fontSize: 13, fontWeight: '700' },
+  sendContainer: {
+    paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 1,
+  },
+  sendButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 16, paddingVertical: 16, gap: 8,
+  },
+  sendButtonText: { fontWeight: '800', fontSize: 16 },
 });

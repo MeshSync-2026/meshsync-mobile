@@ -63,13 +63,43 @@ async function pushToCloud() {
     .map((it) => it.row_id);
   if (confirmedIds.length) {
     await store.markSynced(confirmedIds);
-    const highestConfirmed = sorted
-      .filter((e) => confirmedIds.includes(e.id))
-      .reduce((max, e) => (e.hlc_timestamp > max ? e.hlc_timestamp : max), "0");
-    if (highestConfirmed !== "0") advanceWatermark(highestConfirmed);
   }
 
   return body.new_count ?? 0;
+}
+
+const MOCK_NODE_IDS = new Set([
+  "node-test",
+  "test-cli",
+  "node-live-verify",
+  "node-munkwxl6-nori",
+  "node-munkzpzs-d4t3",
+  "node-munkx0kh-yz1r",
+  "node-munkod5h-ie53",
+]);
+const MOCK_INCIDENT_IDS = new Set([
+  "render-e2e-1",
+  "render-e2e-2",
+  "test-cli-valid-1",
+  "live-status-verify-3",
+]);
+const MOCK_LANDMARKS = new Set(["Render E2E Test", "Severity4 Test", "Debug"]);
+
+export function isMockCloudEvent(evt) {
+  if (!evt) return true;
+  if (MOCK_NODE_IDS.has(evt.origin_node_id)) return true;
+  if (MOCK_INCIDENT_IDS.has(evt.incident_id)) return true;
+  if (MOCK_LANDMARKS.has(evt.landmark_name)) return true;
+  if (
+    typeof evt.id === "string" &&
+    (evt.id.startsWith("cloud-assign-test") ||
+      evt.id.startsWith("test-cli") ||
+      evt.id.startsWith("test-mix-") ||
+      evt.id.startsWith("live-status-verify"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 async function pullFromCloud() {
@@ -78,6 +108,7 @@ async function pullFromCloud() {
 
   let received = 0;
   for (const raw of events) {
+    if (isMockCloudEvent(raw)) continue;
     if (await store.insert(normalizeCloudEvent(raw))) received++;
   }
   if (events.length) advanceWatermark(events[events.length - 1].hlc_timestamp);

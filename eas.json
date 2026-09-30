@@ -28,6 +28,11 @@
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_EDGE_SYNC_URL": "https://meshsync-edge-sync.onrender.com",
+        "EXPO_PUBLIC_EDGE_SYNC_WS_URL": "wss://meshsync-edge-sync.onrender.com/ws",
+        "EXPO_PUBLIC_CC_URL": "https://meshsync-cloud-api.onrender.com"
+      },
       "android": {
         "buildType": "app-bundle"
       }

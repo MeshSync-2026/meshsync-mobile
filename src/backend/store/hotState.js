@@ -116,7 +116,13 @@ export async function hydrateHotState() {
     for (const k of keys) {
       const val = await safeAsyncGet(`@meshsync_hot_${k}`);
       if (val !== null && val !== undefined) {
-        if (k === "seq" || k.startsWith("status_")) {
+        if (k === "seq") {
+          // Never regress: the AsyncStorage mirror can be staler than MMKV
+          // (mirror flush can be lost on process death). Take the max so a
+          // restarted node never reuses a sequence it already broadcast.
+          const current = storage.getNumber("seq");
+          storage.set("seq", Math.max(Number(val), current ?? 0));
+        } else if (k.startsWith("status_")) {
           storage.set(k, Number(val));
         } else if (k === "is_registered") {
           storage.set(k, val === "true");

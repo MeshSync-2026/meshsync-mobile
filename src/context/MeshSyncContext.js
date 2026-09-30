@@ -24,7 +24,7 @@ import { BleTransport } from "../backend/transport/bleTransport";
 import { WsTransport } from "../backend/transport/wsTransport";
 import { startCloudSync, syncNow as triggerCloudSync } from "../backend/cloudSync";
 import { loginOfficer } from "../backend/cloudApi";
-import { getProfile, getResponderSession } from "../utils/storage";
+import { getProfile, getResponderSession, hashPin } from "../utils/storage";
 import {
   createSosEvent,
   createHazardEvent,
@@ -499,25 +499,20 @@ export function MeshSyncProvider({ children }) {
       try {
         authResult = await loginOfficer(normalizedId, normalizedPin);
       } catch (e) {
+        // Offline fallback: only reuse a session that was previously
+        // server-verified on THIS device, gated by the hashed PIN.
         const cachedSession = await getResponderSession();
-        const offlineId = process.env.EXPO_PUBLIC_OFFLINE_RESPONDER_ID || "RSP-001";
-        const offlinePin = process.env.EXPO_PUBLIC_OFFLINE_RESPONDER_PIN || "1234";
 
         if (
           cachedSession &&
           cachedSession.responderId === normalizedId &&
-          cachedSession.pin === normalizedPin
+          (cachedSession.pinHash === hashPin(normalizedPin) ||
+            cachedSession.pin === normalizedPin) // legacy plaintext sessions
         ) {
           authResult = {
             authority_user_id: cachedSession.authorityUserId || normalizedId,
             assigned_zone_id: cachedSession.assignedZoneId || "ZONE-DEFAULT",
             token: cachedSession.token || "",
-          };
-        } else if (normalizedId === offlineId.toUpperCase() && normalizedPin === offlinePin) {
-          authResult = {
-            authority_user_id: normalizedId,
-            assigned_zone_id: "ZONE-DEFAULT",
-            token: "",
           };
         } else {
           throw e;

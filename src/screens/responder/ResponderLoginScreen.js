@@ -20,6 +20,7 @@ import { useMeshSync } from '../../context/MeshSyncContext';
 import {
   saveResponderSession,
   clearResponderSession,
+  hashPin,
 } from '../../utils/storage';
 
 
@@ -110,7 +111,7 @@ export default function ResponderLoginScreen({
 
         const responderSession = {
           responderId: enteredId,
-          pin: enteredPin,
+          pinHash: hashPin(enteredPin),
           authorityUserId: result.authorityUserId || enteredId,
           assignedZoneId: result.assignedZoneId || 'ZONE-DEFAULT',
           token: result.token || '',
@@ -134,7 +135,7 @@ export default function ResponderLoginScreen({
 
         console.log(
           'Responder session saved locally:',
-          responderSession
+          enteredId
         );
 
       } else {

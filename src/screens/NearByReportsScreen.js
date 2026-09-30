@@ -213,7 +213,7 @@ const Radar = React.memo(function Radar({ incidents, myLat, myLng, colors, size 
 
 export default function NearbyScreen({ navigation }) {
   const { colors, spacing, t, isResponder } = useApp();
-  const { incidents: contextIncidents, userLocation, refreshLocation } = useMeshSync();
+  const { incidents: contextIncidents, responders, userLocation, refreshLocation } = useMeshSync();
 
   const [location, setLocation] = useState(userLocation || null);
   const [refreshing, setRefreshing] = useState(false);
@@ -310,6 +310,9 @@ export default function NearbyScreen({ navigation }) {
     const title = getIncidentTitle(item);
     const isOwn = item.creator_node_id === getNodeId();
     const sevConfig = getSeverityConfig(item.severity_level || 2);
+    const respondersComing = (responders || []).filter(
+      (r) => r.incident_id === item.id
+    ).length;
 
     return (
       <TouchableOpacity
@@ -338,6 +341,11 @@ export default function NearbyScreen({ navigation }) {
                   <Text style={styles.severityBadgeText}>{sevConfig.label}</Text>
                 </View>
               )}
+              {isOwn && (
+                <View style={[styles.ownBadge, { backgroundColor: colors.accent.primary + '1A' }]}>
+                  <Text style={[styles.ownBadgeText, { color: colors.accent.primary }]}>{t('nearby.legendYou')}</Text>
+                </View>
+              )}
             </View>
             <View style={styles.cardMeta}>
               <View style={styles.metaItem}>
@@ -357,42 +365,52 @@ export default function NearbyScreen({ navigation }) {
                 </View>
               )}
             </View>
+            {respondersComing > 0 && !isResolved && (
+              <View style={[styles.comingRow, { backgroundColor: colors.status.info + '1A' }]}>
+                <Ionicons name="walk" size={12} color={colors.status.info} />
+                <Text style={[styles.comingText, { color: colors.status.info }]}>
+                  {isOwn
+                    ? t('nearby.helpComingCount', { count: respondersComing })
+                    : t('nearby.respondersComing', { count: respondersComing })}
+                </Text>
+              </View>
+            )}
             {isUrgent && !isResolved && (item.status_safety >= 1 || item.status_water >= 1 || item.status_injury >= 1) && (
               <View style={styles.needsRow}>
                 {item.status_safety === 2 && (
                   <View style={[styles.needChip, { backgroundColor: colors.status.critical + '33' }]}>
                     <Ionicons name="warning" size={10} color={colors.status.critical} />
-                    <Text style={[styles.needText, { color: colors.status.critical }]}>Trapped</Text>
+                    <Text style={[styles.needText, { color: colors.status.critical }]}>{t('nearby.trapped')}</Text>
                   </View>
                 )}
                 {item.status_safety === 1 && (
                   <View style={[styles.needChip, { backgroundColor: colors.status.warning + '33' }]}>
                     <Ionicons name="help-circle" size={10} color={colors.status.warning} />
-                    <Text style={[styles.needText, { color: colors.status.warning }]}>Need Help</Text>
+                    <Text style={[styles.needText, { color: colors.status.warning }]}>{t('nearby.needHelp')}</Text>
                   </View>
                 )}
                 {item.status_water === 2 && (
                   <View style={[styles.needChip, { backgroundColor: colors.status.critical + '33' }]}>
                     <Ionicons name="water" size={10} color={colors.status.critical} />
-                    <Text style={[styles.needText, { color: colors.status.critical }]}>No water</Text>
+                    <Text style={[styles.needText, { color: colors.status.critical }]}>{t('nearby.noWater')}</Text>
                   </View>
                 )}
                 {item.status_water === 1 && (
                   <View style={[styles.needChip, { backgroundColor: colors.status.warning + '33' }]}>
                     <Ionicons name="water" size={10} color={colors.status.warning} />
-                    <Text style={[styles.needText, { color: colors.status.warning }]}>Low water</Text>
+                    <Text style={[styles.needText, { color: colors.status.warning }]}>{t('nearby.lowWater')}</Text>
                   </View>
                 )}
                 {item.status_injury === 2 && (
                   <View style={[styles.needChip, { backgroundColor: colors.status.critical + '33' }]}>
                     <Ionicons name="medkit" size={10} color={colors.status.critical} />
-                    <Text style={[styles.needText, { color: colors.status.critical }]}>Severe injury</Text>
+                    <Text style={[styles.needText, { color: colors.status.critical }]}>{t('nearby.severeInjury')}</Text>
                   </View>
                 )}
                 {item.status_injury === 1 && (
                   <View style={[styles.needChip, { backgroundColor: colors.status.warning + '33' }]}>
                     <Ionicons name="medkit" size={10} color={colors.status.warning} />
-                    <Text style={[styles.needText, { color: colors.status.warning }]}>Minor injury</Text>
+                    <Text style={[styles.needText, { color: colors.status.warning }]}>{t('nearby.minorInjury')}</Text>
                   </View>
                 )}
               </View>
@@ -402,7 +420,7 @@ export default function NearbyScreen({ navigation }) {
           {/* Respond action */}
           {isResponder && isUrgent && !isResolved && !isOwn && (
             <TouchableOpacity style={[styles.helpBtn, { backgroundColor: colors.accent.primary }]} onPress={() => handleCardPress(item)}>
-              <Text style={[styles.helpBtnText, { color: colors.accent.onPrimary }]}>Help</Text>
+              <Text style={[styles.helpBtnText, { color: colors.accent.onPrimary }]}>{t('nearby.iCanHelp')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -565,6 +583,10 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: '700', flexShrink: 1 },
   severityBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   severityBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
+  ownBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  ownBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
+  comingRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
+  comingText: { fontSize: 11, fontWeight: '600' },
   cardMeta: { flexDirection: 'row', gap: 12, marginTop: 4 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   metaText: { fontSize: 11 },

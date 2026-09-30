@@ -180,43 +180,48 @@ export function lwwFold(sortedEvents) {
 
       case EVENT_TYPE.STATUS_UPDATE: {
         let inc = incidents.get(incId);
+        const reportTypeCode = evt.report_type_code ?? evt.reportTypeCode;
+        const statusSafety = evt.status_safety ?? evt.statusSafety;
+        const statusWater = evt.status_water ?? evt.statusWater;
+        const statusInjury = evt.status_injury ?? evt.statusInjury;
         if (!inc) {
-          const severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity ?? SEVERITY.MEDIUM;
-          inc = {
-            id: incId,
-            creator_node_id: evt.origin_node_id,
-            latitude: evt.latitude,
-            longitude: evt.longitude,
-            landmark_name: evt.landmark_name ?? evt.landmarkName ?? null,
-            report_type_code: evt.report_type_code ?? evt.reportTypeCode ?? REPORT_TYPE.HAZARD,
-            category_code: evt.category_code ?? evt.categoryCode ?? null,
-            severity_level: severityLevel,
-            severity: severityLevel,
-            status_safety: evt.status_safety ?? evt.statusSafety,
-            people_count: evt.people_count ?? evt.peopleCount,
-            status_water: evt.status_water ?? evt.statusWater,
-            status_injury: evt.status_injury ?? evt.statusInjury,
-            status_code: STATUS.OPEN,
-            confidence_code: CONFIDENCE.LIVE,
-            last_heartbeat_at: evt.created_at,
-            last_alive_hlc: evt.hlc_timestamp,
-            last_event_hlc: evt.hlc_timestamp,
-            created_at: evt.created_at,
-            updated_at: evt.created_at,
-          };
-          incidents.set(incId, inc);
+          // Standalone status: only create an incident for hazards, distress
+          // signals, or untyped updates. Plain "I'm safe" statuses stay events.
+          const isDistress = (statusSafety ?? 0) >= 1 || (statusInjury ?? 0) >= 1 || (statusWater ?? 0) >= 2;
+          if (reportTypeCode === REPORT_TYPE.HAZARD || reportTypeCode == null || isDistress) {
+            const severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity ?? SEVERITY.MEDIUM;
+            inc = {
+              id: incId,
+              creator_node_id: evt.origin_node_id,
+              latitude: evt.latitude,
+              longitude: evt.longitude,
+              landmark_name: evt.landmark_name ?? evt.landmarkName ?? null,
+              report_type_code: reportTypeCode ?? REPORT_TYPE.HAZARD,
+              category_code: evt.category_code ?? evt.categoryCode ?? null,
+              severity_level: severityLevel,
+              severity: severityLevel,
+              status_safety: statusSafety,
+              people_count: evt.people_count ?? evt.peopleCount,
+              status_water: statusWater,
+              status_injury: statusInjury,
+              status_code: STATUS.OPEN,
+              confidence_code: CONFIDENCE.LIVE,
+              last_heartbeat_at: evt.created_at,
+              last_alive_hlc: evt.hlc_timestamp,
+              last_event_hlc: evt.hlc_timestamp,
+              created_at: evt.created_at,
+              updated_at: evt.created_at,
+            };
+            incidents.set(incId, inc);
+          }
         } else {
-          // Update incident fields via LWW
-          const reportTypeCode = evt.report_type_code ?? evt.reportTypeCode;
+          // Update incident fields via LWW — never overwrite report_type:
+          // an SOS stays SOS even when a status update is attached to it.
           const categoryCode = evt.category_code ?? evt.categoryCode;
           const severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity;
-          const statusSafety = evt.status_safety ?? evt.statusSafety;
           const peopleCount = evt.people_count ?? evt.peopleCount;
-          const statusWater = evt.status_water ?? evt.statusWater;
-          const statusInjury = evt.status_injury ?? evt.statusInjury;
           const landmarkName = evt.landmark_name ?? evt.landmarkName;
 
-          if (reportTypeCode != null) inc.report_type_code = reportTypeCode;
           if (categoryCode != null) inc.category_code = categoryCode;
           if (severityLevel != null) {
             inc.severity_level = severityLevel;

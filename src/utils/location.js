@@ -95,7 +95,29 @@ export async function getCurrentLocation({ showAlertOnDenied = true, highAccurac
     return null;
   }
 
-  // Tier 1: Try requested accuracy with a 2.5s timeout so offline SOS/Hazard never hangs
+  // Tier 1: Instant — device's last-known OS fix (no internet/GPS warmup needed).
+  // Covers the common case where the OS already has a fresh fix.
+  try {
+    if (typeof LocationModule.getLastKnownPositionAsync === "function") {
+      const lastKnown = await withTimeout(
+        LocationModule.getLastKnownPositionAsync({ maxAge: 120000 }),
+        800
+      );
+      if (lastKnown && lastKnown.coords) {
+        cachedLocation = {
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+          accuracy: lastKnown.coords.accuracy ?? null,
+          timestamp: lastKnown.timestamp || Date.now(),
+        };
+        return cachedLocation;
+      }
+    }
+  } catch (tier1Error) {
+    console.warn("[Location] Fresh last-known fix unavailable:", tier1Error?.message || tier1Error);
+  }
+
+  // Tier 2: Active fix at requested accuracy — 2.5s timeout so offline SOS never hangs
   try {
     const accuracy = highAccuracy
       ? (LocationModule.Accuracy?.High ?? 4)
@@ -118,11 +140,11 @@ export async function getCurrentLocation({ showAlertOnDenied = true, highAccurac
       };
       return cachedLocation;
     }
-  } catch (tier1Error) {
-    console.warn("[Location] High accuracy fix failed, attempting balanced fallback:", tier1Error?.message || tier1Error);
+  } catch (tier2Error) {
+    console.warn("[Location] High accuracy fix failed, attempting balanced fallback:", tier2Error?.message || tier2Error);
   }
 
-  // Tier 2: Fallback to Balanced accuracy with 1.5s timeout
+  // Tier 3: Fallback to Balanced accuracy with 1.5s timeout
   try {
     if (LocationModule.Accuracy?.Balanced != null) {
       const fallbackPosition = await withTimeout(
@@ -143,16 +165,16 @@ export async function getCurrentLocation({ showAlertOnDenied = true, highAccurac
         return cachedLocation;
       }
     }
-  } catch (tier2Error) {
-    console.warn("[Location] Balanced fallback fix failed:", tier2Error?.message || tier2Error);
+  } catch (tier3Error) {
+    console.warn("[Location] Balanced fallback fix failed:", tier3Error?.message || tier3Error);
   }
 
-  // Tier 3: Fallback to device's last known location
+  // Tier 4: Stale last-known fix (up to 1 hour old) is still better than nothing
   try {
     if (typeof LocationModule.getLastKnownPositionAsync === "function") {
       const lastKnown = await withTimeout(
         LocationModule.getLastKnownPositionAsync({
-          maxAge: 3600000, // up to 1 hour
+          maxAge: 3600000,
         }),
         1000
       );
@@ -167,8 +189,8 @@ export async function getCurrentLocation({ showAlertOnDenied = true, highAccurac
         return cachedLocation;
       }
     }
-  } catch (tier3Error) {
-    console.warn("[Location] Last known position retrieval failed:", tier3Error?.message || tier3Error);
+  } catch (tier4Error) {
+    console.warn("[Location] Last known position retrieval failed:", tier4Error?.message || tier4Error);
   }
 
   // Tier 4: Return in-memory cached location if previously obtained during session

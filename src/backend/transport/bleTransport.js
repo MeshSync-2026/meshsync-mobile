@@ -33,7 +33,7 @@ export class BleTransport extends MeshTransport {
 
     const sorted = Array.from(mergedMap.values())
       .sort((a, b) => (b.created_at || b.createdAt || 0) - (a.created_at || a.createdAt || 0))
-      .slice(0, 10)
+      .slice(0, 50) // write path is chunked; keep a deeper inventory so older unsynced events still propagate
       .map((evt) => {
         const compact = {};
         for (const [k, v] of Object.entries(evt)) {

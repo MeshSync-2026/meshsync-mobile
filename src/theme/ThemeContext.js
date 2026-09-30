@@ -29,7 +29,7 @@ export function ThemeProvider({ children }) {
   };
 
   const toggleScheme = (current) => {
-    const from = current ?? scheme;
+    const from = typeof current === 'string' ? current : scheme;
     const next = from === 'dark' ? 'light' : 'dark';
     if (next === 'light') {
       // Warn before leaving dark — OLED battery guidance (§10.7)

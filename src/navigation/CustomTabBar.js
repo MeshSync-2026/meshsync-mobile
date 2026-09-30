@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
+import { useApp } from '../context/AppContext';
 
 const ICONS = {
   Home: 'home',
@@ -10,14 +11,15 @@ const ICONS = {
   MyActivity: 'check-circle',
 };
 
-const LABELS = {
-  Home: 'Home',
-  Nearby: 'Nearby',
-  MyActivity: 'My Activity',
+const LABEL_KEYS = {
+  Home: 'home.title',
+  Nearby: 'nearby.title',
+  MyActivity: 'activity.title',
 };
 
 export default function CustomTabBar({ state, navigation }) {
   const { colors, spacing, radius, typography } = useTheme();
+  const { t } = useApp();
   const insets = useSafeAreaInsets();
 
   return (
@@ -67,7 +69,7 @@ export default function CustomTabBar({ state, navigation }) {
                 { color: focused ? colors.onSurface : colors.onSurfaceVariant, marginTop: 2 },
               ]}
             >
-              {LABELS[route.name]}
+              {t(LABEL_KEYS[route.name] || route.name)}
             </Text>
           </TouchableOpacity>
         );

@@ -109,8 +109,8 @@ export default function ProfileScreen({ navigation }) {
               console.error('Failed to reset app data:', error);
 
               Alert.alert(
-                'Error',
-                'Unable to reset app data.'
+                t('profile.resetError'),
+                t('profile.resetErrorDesc')
               );
             }
           },
@@ -149,7 +149,7 @@ export default function ProfileScreen({ navigation }) {
         edges={['top']}
       >
         <TopAppBar
-          title="Profile"
+          title={t('profile.title')}
           rightIcon={isDark ? 'light-mode' : 'dark-mode'}
           onRightPress={toggleScheme}
         />
@@ -161,7 +161,7 @@ export default function ProfileScreen({ navigation }) {
               { color: colors.onSurfaceVariant },
             ]}
           >
-            Loading profile...
+            {t('common.loading')}
           </Text>
         </View>
       </SafeAreaView>

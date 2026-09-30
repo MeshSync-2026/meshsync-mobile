@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "npx jest src/backend/__tests__/"
+    "test": " npx jest",
+    "test:shared": "node --test src/backend/shared/*.test.js"
   },
   "dependencies": {
     "@expo-google-fonts/atkinson-hyperlegible": "^0.2.3",
@@ -38,6 +39,9 @@
     "react-native-web": "~0.19.10"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.0"
+    "@babel/core": "^7.24.0",
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^12.9.0",
+    "react-test-renderer": "^18.2.0"
   }
 }

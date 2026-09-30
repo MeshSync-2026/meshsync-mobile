@@ -133,11 +133,14 @@ export function projectToRadar(userLoc, targetLoc, maxRangeMeters = 2000, radarS
  */
 export function classifyBlipType(incident) {
   if (!incident) return "mesh";
+  const sev = incident.severity_level ?? incident.severityLevel ?? incident.severity;
   if (
     incident.report_type_code === REPORT_TYPE.SOS ||
     incident.event_type_code === 1 || // SOS_CREATED
-    incident.severity_level === SEVERITY.HIGH ||
-    incident.severity === "high"
+    sev === SEVERITY.HIGH ||
+    sev === SEVERITY.VERY_HIGH ||
+    sev === "high" ||
+    sev === "very_high"
   ) {
     return "urgent";
   }

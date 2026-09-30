@@ -13,11 +13,9 @@ import {
 
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../../theme/ThemeContext';
 import { useMeshSync } from '../../context/MeshSyncContext';
-import { responderCredentials } from '../../data/mockData';
 
 import {
   saveResponderSession,
@@ -92,7 +90,6 @@ export default function ResponderLoginScreen({
       const result = await loginResponder({
         username: enteredId,
         password: enteredPin,
-        fallbackCredentials: responderCredentials,
       });
 
       if (!result.success) {
@@ -113,6 +110,10 @@ export default function ResponderLoginScreen({
 
         const responderSession = {
           responderId: enteredId,
+          pin: enteredPin,
+          authorityUserId: result.authorityUserId || enteredId,
+          assignedZoneId: result.assignedZoneId || 'ZONE-DEFAULT',
+          token: result.token || '',
 
           authenticated: true,
 
@@ -150,37 +151,10 @@ export default function ResponderLoginScreen({
 
 
       /*
-       * Mark onboarding complete for authorized responders too —
-       * RootNavigator keys the initial route off this profile.
+       * Navigate to responder dashboard.
        */
 
-      try {
-        const profile = {
-          name: result.user?.full_name || enteredId,
-          fullName: result.user?.full_name || 'Authorized Responder',
-          role: 'RESPONDER',
-        };
-        await AsyncStorage.setItem(
-          '@meshsync_profile',
-          JSON.stringify(profile)
-        );
-      } catch (profileErr) {
-        console.log('Profile save skipped:', profileErr?.message || profileErr);
-      }
-
-      /*
-       * Navigate to responder dashboard. When arriving from onboarding
-       * (root stack), 'AssignedMeshes' only exists inside the Responder
-       * navigator — fall back to the root 'Responder' route.
-       */
-
-      const state = navigation.getState?.();
-      const routeNames = new Set((state?.routes || []).map((r) => r.name));
-      if (routeNames.has('AssignedMeshes')) {
-        navigation.replace('AssignedMeshes');
-      } else {
-        navigation.replace('Responder');
-      }
+      navigation.replace('AssignedMeshes');
 
     } catch (error) {
 
@@ -245,7 +219,17 @@ export default function ResponderLoginScreen({
           <View style={styles.topActions}>
 
             <Pressable
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  const rootNav = navigation.getParent() || navigation;
+                  rootNav.reset({
+                    index: 0,
+                    routes: [{ name: 'Main' }],
+                  });
+                }
+              }}
               style={[
                 styles.iconBtn,
                 {

@@ -14,9 +14,12 @@ import { REPORT_TYPE, SEVERITY, STATUS } from '../../backend/shared/enums';
 import { calculateDistance, formatDistance } from '../../backend/shared/radarGeo';
 
 export default function IncidentListScreen({ route, navigation }) {
-  const { mesh } = route.params || { mesh: { id: 'MS-001', name: 'Batticaloa Central' } };
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
-  const { incidents: liveIncidents, userLocation } = useMeshSync();
+  const { incidents: liveIncidents, userLocation, assignedZoneId } = useMeshSync();
+  const mesh = route.params?.mesh || {
+    id: assignedZoneId || 'ZONE-DEFAULT',
+    name: assignedZoneId || 'Assigned Zone',
+  };
 
   const formattedIncidents = useMemo(() => {
     return (liveIncidents || [])

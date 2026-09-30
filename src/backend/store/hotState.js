@@ -193,6 +193,11 @@ export const getResponderAuthorityUserId = () => storage.getString("responder_au
 export const getLastCloudSyncHlc = () => storage.getString("last_cloud_sync_hlc") || null;
 export const setLastCloudSyncHlc = (hlc) => storage.set("last_cloud_sync_hlc", hlc);
 
+// One-time production cleanup flag — first launch after install purges
+// stale/test events from the local store (bumped to v2 for bench/ooo filter).
+export const hasCompletedProdCleanup = () => storage.getBoolean("prod_db_cleaned_v2") ?? false;
+export const markProdCleanupComplete = () => storage.set("prod_db_cleaned_v2", true);
+
 export function registerAsResponder({ authority_user_id, assigned_zone_id, token }) {
   storage.set("is_registered", true);
   storage.set("assigned_zone_id", assigned_zone_id || "");

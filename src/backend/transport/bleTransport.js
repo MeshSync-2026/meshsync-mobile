@@ -14,10 +14,45 @@ export class BleTransport extends MeshTransport {
     this.initialized = false;
   }
 
+  async _buildBlePayload(priorityEvents = []) {
+    const allEvents = await getStore().getAll();
+    const mergedMap = new Map();
+
+    if (Array.isArray(priorityEvents)) {
+      for (const evt of priorityEvents) {
+        if (evt && evt.id) mergedMap.set(evt.id, evt);
+      }
+    }
+    if (Array.isArray(allEvents)) {
+      for (const evt of allEvents) {
+        if (evt && evt.id && !mergedMap.has(evt.id)) {
+          mergedMap.set(evt.id, evt);
+        }
+      }
+    }
+
+    const sorted = Array.from(mergedMap.values())
+      .sort((a, b) => (b.created_at || b.createdAt || 0) - (a.created_at || a.createdAt || 0))
+      .slice(0, 10)
+      .map((evt) => {
+        const compact = {};
+        for (const [k, v] of Object.entries(evt)) {
+          if (v === null || v === undefined) continue;
+          if (k === "is_cloud_synced") continue;
+          if (k === "severity" && evt.severity_level != null) continue;
+          compact[k] = v;
+        }
+        return compact;
+      });
+
+    return JSON.stringify(sorted);
+  }
+
   async start() {
     if (this.isActive) return;
     this.isActive = true;
     diagLog.info("TRANSPORT", `Starting BLE transport for node ${this.nodeId} (${this.role})`);
+    console.log(`[BLE Transport] Starting production BLE transport for node ${this.nodeId} (${this.role})...`);
 
     try {
       this.peerDiscovery = new PeerDiscoveryManager(
@@ -25,28 +60,30 @@ export class BleTransport extends MeshTransport {
         this.role,
         async (peerId, rawPayload) => {
           diagLog.info("TRANSPORT", `Processing payload from peer: ${peerId} (${rawPayload?.length || 0} bytes)`);
+          console.log(`[BLE Transport] Processing incoming payload from peer: ${peerId}`);
           try {
             const incomingEvents = JSON.parse(rawPayload);
-            const eventsList = Array.isArray(incomingEvents)
-              ? incomingEvents
-              : incomingEvents?.events && Array.isArray(incomingEvents.events)
-              ? incomingEvents.events
-              : incomingEvents && incomingEvents.id
-              ? [incomingEvents]
-              : [];
-
-            if (eventsList.length > 0) {
+            if (Array.isArray(incomingEvents) && incomingEvents.length > 0) {
               const store = getStore();
               const newEvents = [];
 
-              for (const evt of eventsList) {
+              for (const evt of incomingEvents) {
                 if (!evt || !evt.id) continue;
-                const seen = await store.hasSeen(evt.origin_node_id, evt.seq);
+                const originNodeId = evt.origin_node_id || evt.originNodeId || "unknown";
+                const seq = evt.seq ?? 0;
+                const seen = await store.hasSeen(originNodeId, seq);
                 if (seen) continue;
 
-                await store.insert(evt);
-                await store.markSeen(evt.origin_node_id, evt.seq);
-                newEvents.push(evt);
+                const normalizedEvt = {
+                  ...evt,
+                  origin_node_id: originNodeId,
+                  seq,
+                };
+                const inserted = await store.insert(normalizedEvt);
+                await store.markSeen(originNodeId, seq);
+                if (inserted !== false) {
+                  newEvents.push(normalizedEvt);
+                }
               }
 
               if (newEvents.length > 0) {
@@ -54,25 +91,23 @@ export class BleTransport extends MeshTransport {
                 diagLog.updateState({
                   eventsIngestedCount: (diagLog.state.eventsIngestedCount || 0) + newEvents.length,
                 });
+                console.log(`[BLE Transport] Ingested ${newEvents.length} new mesh events from peer ${peerId}`);
                 this.emitEvents(newEvents);
 
-                // Update local advertising payload with newly ingested events
-                await this.sendEvents();
-              } else {
-                diagLog.info("TRANSPORT", `Received ${eventsList.length} events from ${peerId}, but all were already seen`);
+                // Refresh local GATT characteristic payload with newly ingested events
+                const payloadStr = await this._buildBlePayload(newEvents);
+                this.peerDiscovery.updateLocalPayload(payloadStr, false);
               }
-            } else {
-              diagLog.warn("TRANSPORT", `Received empty event list from peer ${peerId}`);
             }
           } catch (jsonErr) {
-            diagLog.error("TRANSPORT", `Failed to parse payload from ${peerId}: ${jsonErr.message}`);
+            console.error("[BLE Transport] Failed to parse received JSON payload:", jsonErr);
           }
         }
       );
 
       // Load initial local events into GATT payload before advertising
-      const currentEvents = await getStore().getAll();
-      this.peerDiscovery.updateLocalPayload(JSON.stringify(currentEvents));
+      const initialPayload = await this._buildBlePayload();
+      this.peerDiscovery.localPayload = initialPayload;
 
       await this.peerDiscovery.start();
       this.initialized = true;
@@ -101,15 +136,9 @@ export class BleTransport extends MeshTransport {
     if (!this.isActive || !this.peerDiscovery) return;
 
     try {
-      // Whenever local event log updates, refresh the BLE GATT payload
-      const allEvents = await getStore().getAll();
-      const payloadStr = JSON.stringify(allEvents);
-      this.peerDiscovery.updateLocalPayload(payloadStr);
-
-      // Actively push newly broadcasted events to all known active peers immediately
-      if (typeof this.peerDiscovery.syncWithActivePeers === "function") {
-        this.peerDiscovery.syncWithActivePeers().catch(() => {});
-      }
+      // Whenever local event log updates, refresh the BLE GATT payload and immediately push to discovered peers
+      const payloadStr = await this._buildBlePayload(events);
+      this.peerDiscovery.updateLocalPayload(payloadStr, true);
     } catch (err) {
       console.error("[BLE Transport] Error updating BLE payload:", err);
     }

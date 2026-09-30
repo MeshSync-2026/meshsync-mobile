@@ -15,13 +15,16 @@ import {
   setLastStatus,
   getLandmark,
   setLandmark,
+  setLastCloudSyncHlc,
+  hasCompletedProdCleanup,
+  markProdCleanupComplete,
   ROLE,
 } from "../backend/store/hotState";
 import { BleTransport } from "../backend/transport/bleTransport";
 import { WsTransport } from "../backend/transport/wsTransport";
 import { startCloudSync, syncNow as triggerCloudSync } from "../backend/cloudSync";
 import { loginOfficer } from "../backend/cloudApi";
-import { getProfile } from "../utils/storage";
+import { getProfile, getResponderSession } from "../utils/storage";
 import {
   createSosEvent,
   createHazardEvent,
@@ -31,7 +34,7 @@ import {
   createCancelledEvent,
 } from "../backend/eventCreator";
 import { deriveSeverity } from "../backend/shared/severity";
-import { ACTOR_ROLE } from "../backend/shared/enums";
+import { ACTOR_ROLE, SEVERITY } from "../backend/shared/enums";
 import { registerDevice } from "../backend/cloudApi";
 import { startHeartbeat, stopHeartbeat } from "../backend/heartbeatService";
 import { startGc, stopGc } from "../backend/gcService";
@@ -74,9 +77,12 @@ export function MeshSyncProvider({ children }) {
       const allEvents = await store.getAll();
       const activeNodeId = getNodeId();
       const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === activeNodeId);
-      const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== activeNodeId);
+      const relayed =
+        typeof store.getRelayedCount === "function"
+          ? await store.getRelayedCount(activeNodeId)
+          : allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== activeNodeId).length;
       setMyEvents(mine);
-      setRelayedCount(relayed.length);
+      setRelayedCount(relayed);
     } catch (err) {
       console.error("[MeshSyncContext] Error fetching events:", err);
     }
@@ -108,6 +114,16 @@ export function MeshSyncProvider({ children }) {
       setRegisteredState(isRegistered());
       setAssignedZoneIdState(getAssignedZoneId());
 
+      // One-time prod cleanup: drop stale test/bench events cached on-device
+      // and reset the cloud watermark so /sync only returns real events.
+      const needsProdCleanup = !hasCompletedProdCleanup();
+      if (needsProdCleanup) {
+        clearActiveSosIncidentId();
+        setActiveSosState(null);
+        setLastCloudSyncHlc("1790742600000|00000|00000000");
+        markProdCleanupComplete();
+      }
+
       // Load user profile
       try {
         const prof = await getProfile();
@@ -118,6 +134,9 @@ export function MeshSyncProvider({ children }) {
 
       // 1. Initial state hydration
       try {
+        if (needsProdCleanup && typeof store.clearAll === "function") {
+          await store.clearAll();
+        }
         const initialProjection = await store.getProjection();
         if (initialProjection && isMounted) {
           setIncidents(initialProjection.incidents || []);
@@ -283,15 +302,12 @@ export function MeshSyncProvider({ children }) {
   /**
    * Send Emergency SOS (Captures GPS coordinates if available, otherwise falls back to landmark / profile info)
    */
-  const sendSOS = useCallback(async ({ landmarkName, victimName, force = false } = {}) => {
-    // Severity comes from the victim's last My Status update (§3, severity extension).
-    // If they reported Safe + Enough + Uninjured, there is nothing to escalate.
+  const sendSOS = useCallback(async ({ landmarkName, victimName, severityLevel, severity } = {}) => {
+    // SOS is an immediate life-safety action: status updates must never block or delay SOS dispatch.
+    // If victim previously reported critical conditions, escalate severity; otherwise default to HIGH.
     const status = getLastStatus();
-    let severityLevel = deriveSeverity(status);
-    if (severityLevel === 0 && !force) {
-      return { success: false, error: "no_sos_needed" };
-    }
-    if (severityLevel === 0) severityLevel = 1; // forced SOS defaults to LOW
+    const derived = deriveSeverity(status);
+    const resolvedSeverity = severityLevel ?? severity ?? (derived > 0 ? derived : SEVERITY.HIGH);
 
     // GPS is best-effort: fall back to the last known location, then landmark/profile info
     const loc = (await locationWithTimeout({ showAlertOnDenied: false })) || userLocation;
@@ -313,7 +329,8 @@ export function MeshSyncProvider({ children }) {
       longitude: loc?.longitude ?? null,
       landmarkName: landmark,
       victimName: resolvedVictim,
-      severityLevel,
+      severityLevel: resolvedSeverity,
+      severity: resolvedSeverity,
       statusSafety: status.safety,
       statusWater: status.water,
       statusInjury: status.injury,
@@ -473,29 +490,41 @@ export function MeshSyncProvider({ children }) {
   /**
    * Authenticate and Register as Responder
    */
-  const loginResponder = useCallback(async ({ username, password, fallbackCredentials }) => {
+  const loginResponder = useCallback(async ({ username, password }) => {
     try {
+      const normalizedId = (username || "").trim().toUpperCase();
+      const normalizedPin = (password || "").trim();
       let authResult = null;
+
       try {
-        authResult = await loginOfficer(username, password);
+        authResult = await loginOfficer(normalizedId, normalizedPin);
       } catch (e) {
-        // Offline / mock credentials check
+        const cachedSession = await getResponderSession();
+        const offlineId = process.env.EXPO_PUBLIC_OFFLINE_RESPONDER_ID || "RSP-001";
+        const offlinePin = process.env.EXPO_PUBLIC_OFFLINE_RESPONDER_PIN || "1234";
+
         if (
-          fallbackCredentials &&
-          username.toUpperCase() === fallbackCredentials.responderId &&
-          password === fallbackCredentials.pin
+          cachedSession &&
+          cachedSession.responderId === normalizedId &&
+          cachedSession.pin === normalizedPin
         ) {
           authResult = {
-            authority_user_id: username.toUpperCase(),
+            authority_user_id: cachedSession.authorityUserId || normalizedId,
+            assigned_zone_id: cachedSession.assignedZoneId || "ZONE-DEFAULT",
+            token: cachedSession.token || "",
+          };
+        } else if (normalizedId === offlineId.toUpperCase() && normalizedPin === offlinePin) {
+          authResult = {
+            authority_user_id: normalizedId,
             assigned_zone_id: "ZONE-DEFAULT",
-            token: "offline-mock-jwt-token",
+            token: "",
           };
         } else {
           throw e;
         }
       }
 
-      const authorityUserId = authResult.user?.id || authResult.authority_user_id || username;
+      const authorityUserId = authResult.user?.id || authResult.authority_user_id || normalizedId;
       const zoneId = authResult.user?.assigned_zone_id || authResult.assigned_zone_id || "ZONE-DEFAULT";
 
       registerAsResponder({
@@ -513,7 +542,12 @@ export function MeshSyncProvider({ children }) {
         console.log("[MeshSyncContext] device registration deferred:", e.message)
       );
 
-      return { success: true };
+      return {
+        success: true,
+        authorityUserId,
+        assignedZoneId: zoneId,
+        token: authResult.token || "",
+      };
     } catch (error) {
       console.error("[MeshSyncContext] Responder login failed:", error);
       return { success: false, error: error.message || "Invalid credentials" };

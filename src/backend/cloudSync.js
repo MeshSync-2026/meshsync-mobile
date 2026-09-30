@@ -63,13 +63,56 @@ async function pushToCloud() {
     .map((it) => it.row_id);
   if (confirmedIds.length) {
     await store.markSynced(confirmedIds);
-    const highestConfirmed = sorted
-      .filter((e) => confirmedIds.includes(e.id))
-      .reduce((max, e) => (e.hlc_timestamp > max ? e.hlc_timestamp : max), "0");
-    if (highestConfirmed !== "0") advanceWatermark(highestConfirmed);
   }
 
   return body.new_count ?? 0;
+}
+
+const MOCK_NODE_IDS = new Set([
+  "node-test",
+  "test-cli",
+  "node-live-verify",
+  "bench-node",
+  "node-ooo-test",
+  "node-munkwxl6-nori",
+  "node-munkzpzs-d4t3",
+  "node-munkx0kh-yz1r",
+  "node-munkod5h-ie53",
+]);
+const MOCK_INCIDENT_IDS = new Set([
+  "render-e2e-1",
+  "render-e2e-2",
+  "test-cli-valid-1",
+  "live-status-verify-3",
+  "ooo-sos-1",
+]);
+const MOCK_LANDMARKS = new Set(["Render E2E Test", "Severity4 Test", "Debug"]);
+
+export function isMockCloudEvent(evt) {
+  if (!evt) return true;
+  if (MOCK_NODE_IDS.has(evt.origin_node_id)) return true;
+  if (MOCK_INCIDENT_IDS.has(evt.incident_id)) return true;
+  if (MOCK_LANDMARKS.has(evt.landmark_name)) return true;
+  if (
+    typeof evt.origin_node_id === "string" &&
+    (evt.origin_node_id.startsWith("bench") ||
+      evt.origin_node_id.startsWith("test") ||
+      evt.origin_node_id.includes("ooo"))
+  ) {
+    return true;
+  }
+  if (
+    typeof evt.id === "string" &&
+    (evt.id.startsWith("cloud-assign-test") ||
+      evt.id.startsWith("test-cli") ||
+      evt.id.startsWith("test-mix-") ||
+      evt.id.startsWith("live-status-verify") ||
+      evt.id.startsWith("bench-") ||
+      evt.id.startsWith("ooo-"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 async function pullFromCloud() {
@@ -77,10 +120,13 @@ async function pullFromCloud() {
   const events = await pullEvents(getLastCloudSyncHlc());
 
   let received = 0;
+  let lastValidHlc = null;
   for (const raw of events) {
+    if (isMockCloudEvent(raw)) continue;
     if (await store.insert(normalizeCloudEvent(raw))) received++;
+    if (raw.hlc_timestamp) lastValidHlc = raw.hlc_timestamp;
   }
-  if (events.length) advanceWatermark(events[events.length - 1].hlc_timestamp);
+  if (lastValidHlc) advanceWatermark(lastValidHlc);
 
   return received;
 }

@@ -28,7 +28,7 @@ class EventStore {
         rec.landmarkName = evt.landmark_name ?? null;
         rec.reportTypeCode = evt.report_type_code ?? null;
         rec.categoryCode = evt.category_code ?? null;
-        rec.severityLevel = evt.severity_level ?? null;
+        rec.severityLevel = evt.severity_level ?? evt.severityLevel ?? evt.severity ?? null;
         rec.statusSafety = evt.status_safety ?? null;
         rec.peopleCount = evt.people_count ?? null;
         rec.statusWater = evt.status_water ?? null;
@@ -79,6 +79,7 @@ class EventStore {
       report_type_code: r.reportTypeCode,
       category_code: r.categoryCode,
       severity_level: r.severityLevel,
+      severity: r.severityLevel,
       status_safety: r.statusSafety,
       people_count: r.peopleCount,
       status_water: r.statusWater,
@@ -130,6 +131,51 @@ class EventStore {
         });
       }
     });
+  }
+
+  async getRelayedCount(currentNodeId) {
+    try {
+      const rows = await this.processedBroadcast.query().fetch();
+      if (!Array.isArray(rows)) return 0;
+      return rows.filter((r) => {
+        const origin = r.originNodeId || r.origin_node_id;
+        return (
+          origin &&
+          origin !== currentNodeId &&
+          origin !== "CLOUD-0000" &&
+          origin !== "node-test" &&
+          origin !== "test-cli"
+        );
+      }).length;
+    } catch (err) {
+      return 0;
+    }
+  }
+
+  async clearAll() {
+    try {
+      const events = await this.meshEvents.query().fetch();
+      const processed = await this.processedBroadcast.query().fetch();
+      await database.write(async () => {
+        for (const rec of events) {
+          if (typeof rec.destroyPermanently === "function") {
+            await rec.destroyPermanently();
+          } else if (typeof rec.markAsDeleted === "function") {
+            await rec.markAsDeleted();
+          }
+        }
+        for (const rec of processed) {
+          if (typeof rec.destroyPermanently === "function") {
+            await rec.destroyPermanently();
+          } else if (typeof rec.markAsDeleted === "function") {
+            await rec.markAsDeleted();
+          }
+        }
+      });
+      await this._notify();
+    } catch (err) {
+      console.error("[eventStore] Failed to clear store:", err);
+    }
   }
 
   async getProjection() {

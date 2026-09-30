@@ -7,15 +7,17 @@ import IncidentListScreen from '../screens/responder/IncidentListScreen';
 import IncidentDetailsScreen from '../screens/responder/IncidentDetailsScreen';
 import ResponderRadarScreen from '../screens/responder/ResponderRadarScreen';
 import UpdateIncidentStatusScreen from '../screens/responder/UpdateIncidentStatusScreen';
-import { isRegistered } from '../backend/store/hotState';
+import { useMeshSync } from '../context/MeshSyncContext';
 
 const Stack = createNativeStackNavigator();
 
 export default function ResponderNavigator() {
+  const { isRegistered } = useMeshSync();
+
   return (
     <Stack.Navigator
       screenOptions={{ headerShown: false }}
-      initialRouteName={isRegistered() ? 'AssignedMeshes' : 'ResponderLogin'}
+      initialRouteName={isRegistered ? 'AssignedMeshes' : 'ResponderLogin'}
     >
       
       <Stack.Screen

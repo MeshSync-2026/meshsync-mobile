@@ -67,9 +67,26 @@ export async function requestLocationPermission({ showAlertOnDenied = true } = {
   }
 }
 
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Location request timed out after ${ms}ms`));
+    }, ms);
+    Promise.resolve(promise)
+      .then((val) => {
+        clearTimeout(timer);
+        resolve(val);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 /**
  * Get current device GPS coordinates.
- * Implements multi-tier fallback: High Accuracy -> Balanced Accuracy -> Last Known Position -> Memory Cache.
+ * Implements multi-tier fallback: Last Known -> High Accuracy (2.5s timeout) -> Balanced Accuracy (2s timeout) -> Memory Cache.
  * Returns null and alerts user only if all attempts and fallbacks fail.
  */
 export async function getCurrentLocation({ showAlertOnDenied = true, highAccuracy = true } = {}) {
@@ -78,16 +95,19 @@ export async function getCurrentLocation({ showAlertOnDenied = true, highAccurac
     return null;
   }
 
-  // Tier 1: Try requested accuracy (e.g. High / Balanced) with user settings dialog prompt
+  // Tier 1: Try requested accuracy with a 2.5s timeout so offline SOS/Hazard never hangs
   try {
     const accuracy = highAccuracy
       ? (LocationModule.Accuracy?.High ?? 4)
       : (LocationModule.Accuracy?.Balanced ?? 3);
 
-    const position = await LocationModule.getCurrentPositionAsync({
-      accuracy,
-      mayShowUserSettingsDialog: true,
-    });
+    const position = await withTimeout(
+      LocationModule.getCurrentPositionAsync({
+        accuracy,
+        mayShowUserSettingsDialog: showAlertOnDenied,
+      }),
+      2500
+    );
 
     if (position && position.coords) {
       cachedLocation = {
@@ -102,13 +122,16 @@ export async function getCurrentLocation({ showAlertOnDenied = true, highAccurac
     console.warn("[Location] High accuracy fix failed, attempting balanced fallback:", tier1Error?.message || tier1Error);
   }
 
-  // Tier 2: Fallback to Balanced / Cell-WiFi accuracy if High failed (e.g., indoors or weak GPS satellite fix)
+  // Tier 2: Fallback to Balanced accuracy with 1.5s timeout
   try {
     if (LocationModule.Accuracy?.Balanced != null) {
-      const fallbackPosition = await LocationModule.getCurrentPositionAsync({
-        accuracy: LocationModule.Accuracy.Balanced,
-        mayShowUserSettingsDialog: true,
-      });
+      const fallbackPosition = await withTimeout(
+        LocationModule.getCurrentPositionAsync({
+          accuracy: LocationModule.Accuracy.Balanced,
+          mayShowUserSettingsDialog: false,
+        }),
+        1500
+      );
 
       if (fallbackPosition && fallbackPosition.coords) {
         cachedLocation = {
@@ -127,9 +150,12 @@ export async function getCurrentLocation({ showAlertOnDenied = true, highAccurac
   // Tier 3: Fallback to device's last known location
   try {
     if (typeof LocationModule.getLastKnownPositionAsync === "function") {
-      const lastKnown = await LocationModule.getLastKnownPositionAsync({
-        maxAge: 3600000, // up to 1 hour
-      });
+      const lastKnown = await withTimeout(
+        LocationModule.getLastKnownPositionAsync({
+          maxAge: 3600000, // up to 1 hour
+        }),
+        1000
+      );
 
       if (lastKnown && lastKnown.coords) {
         cachedLocation = {

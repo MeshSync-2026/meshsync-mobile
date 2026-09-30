@@ -20,9 +20,16 @@ import { useApp } from '../context/AppContext';
 import { LANGS } from '../i18n/translations';
 import { ROLE, resetAll } from '../backend/store/hotState';
 import TopAppBar from '../components/TopAppBar';
-import { profile as mockProfile } from '../data/mockData';
 
 const PROFILE_STORAGE_KEY = '@meshsync_profile';
+
+const EMPTY_PROFILE = {
+  fullName: '',
+  nic: '',
+  phone: '',
+  homeLandmark: '',
+  landmark: '',
+};
 
 export default function ProfileScreen({ navigation }) {
   const {
@@ -58,16 +65,15 @@ export default function ProfileScreen({ navigation }) {
               setProfile(parsedProfile);
             }
           } else {
-            // Temporary fallback for users who haven't completed onboarding.
             if (mounted) {
-              setProfile(mockProfile);
+              setProfile(EMPTY_PROFILE);
             }
           }
         } catch (error) {
           console.error('Failed to load profile:', error);
 
           if (mounted) {
-            setProfile(mockProfile);
+            setProfile(EMPTY_PROFILE);
           }
         }
       };

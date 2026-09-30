@@ -152,6 +152,9 @@ describe("BleTransport Production Transport", () => {
     expect(transport.isActive).toBe(true);
     expect(transport.initialized).toBe(true);
     expect(mockStartDeviceScan).toHaveBeenCalled();
+    expect(mockPeripheralAddService).toHaveBeenCalledWith(SERVICE_UUID, true);
+    expect(mockPeripheralAddCharacteristic).toHaveBeenCalledTimes(2);
+    expect(mockPeripheralStartAdvertising).toHaveBeenCalled();
   });
 
   test("sendEvents should refresh local GATT advertisement payload", async () => {
@@ -162,6 +165,7 @@ describe("BleTransport Production Transport", () => {
     await transport.sendEvents();
 
     expect(mockGetAll).toHaveBeenCalled();
+    expect(mockPeripheralUpdateValue).toHaveBeenCalled();
   });
 
   test("stop should cleanly teardown BLE scanning and advertising", async () => {

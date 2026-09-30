@@ -1,7 +1,7 @@
 // peerDiscoveryManager.js
 // Production Native BLE Mesh Peer Discovery & GATT Sync Manager
 
-import { Platform, PermissionsAndroid } from "react-native";
+import { Platform, PermissionsAndroid, NativeModules, NativeEventEmitter } from "react-native";
 import { BleManager } from "react-native-ble-plx";
 import { Buffer } from "buffer";
 
@@ -12,7 +12,8 @@ export const CHAR_WRITE_UUID = "c1e70002-e4e3-406f-9c1d-77a427ea2a3b";
 
 // Chunk payload size (safe MTU budget for BLE ATT transfers across iOS & Android)
 const CHUNK_PAYLOAD_SIZE = 180;
-const CONNECTION_COOLDOWN_MS = 15000;
+const MAX_GATT_READ_BYTES = 450;
+const CONNECTION_COOLDOWN_MS = 12000;
 const TRANSFER_EXPIRY_MS = 30000;
 
 // Request runtime Bluetooth permissions on Android
@@ -73,6 +74,7 @@ export function chunkPayload(payloadString, transferId = Math.random().toString(
 export class ChunkReassembler {
   constructor() {
     this.transfers = new Map(); // transferId -> { total, chunks: Map<idx, data>, timestamp }
+    this.completedTransfers = new Map(); // transferId -> timestamp
   }
 
   feedChunk(chunkJsonString) {
@@ -81,11 +83,15 @@ export class ChunkReassembler {
     try {
       const packet = JSON.parse(chunkJsonString);
       if (!packet || typeof packet.t !== "string" || typeof packet.i !== "number") {
-        // Fallback for non-chunked raw JSON payload
+        // Fallback for non-chunked raw JSON payload (e.g. JSON array of events)
         return typeof chunkJsonString === "string" ? chunkJsonString : null;
       }
 
       const { t: transferId, i: chunkIndex, n: totalChunks, d: data } = packet;
+
+      if (this.completedTransfers.has(transferId)) {
+        return null; // Already reassembled this transferId
+      }
 
       if (!this.transfers.has(transferId)) {
         this.transfers.set(transferId, {
@@ -106,6 +112,7 @@ export class ChunkReassembler {
           fullBase64 += record.chunks.get(idx) || "";
         }
         this.transfers.delete(transferId);
+        this.completedTransfers.set(transferId, Date.now());
         return Buffer.from(fullBase64, "base64").toString("utf-8");
       }
 
@@ -123,20 +130,33 @@ export class ChunkReassembler {
         this.transfers.delete(id);
       }
     }
+    for (const [id, ts] of this.completedTransfers.entries()) {
+      if (now - ts > TRANSFER_EXPIRY_MS) {
+        this.completedTransfers.delete(id);
+      }
+    }
   }
 }
 
 export class PeerDiscoveryManager {
   constructor(nodeId, role, onPayloadReceived) {
     this.nodeId = nodeId;
+    // Compact 8-char suffix so "MeshSync-<shortId>" (17 bytes) always fits inside the 31-byte legacy BLE adv budget
+    this.shortNodeId = String(nodeId || "node")
+      .replace(/^node-/, "")
+      .slice(-8);
     this.role = role || "civilian";
     this.onPayloadReceived = onPayloadReceived;
 
     this.bleManager = new BleManager();
     this.peripheral = null;
+    this.peripheralReady = false;
+    this.nativeWriteSub = null;
+    this.stateSub = null;
     this.reassembler = new ChunkReassembler();
 
     this.active = false;
+    this.isScanning = false;
     this.localPayload = "[]";
     this.lastConnections = new Map(); // peerNodeId -> timestamp
     this.connectingPeers = new Set(); // peerNodeId
@@ -157,25 +177,96 @@ export class PeerDiscoveryManager {
     return activePeers;
   }
 
-  updateLocalPayload(payloadString) {
+  updateLocalPayload(payloadString, triggerImmediate = false) {
+    const changed = this.localPayload !== payloadString;
     this.localPayload = payloadString;
     this._syncLocalPayloadToGatt();
+
+    if ( (changed || triggerImmediate) && this.active && this.localPayload !== "[]") {
+      this.triggerImmediateSync();
+    }
+  }
+
+  /**
+   * Clear connection cooldowns and immediately push new events to all currently discovered peers.
+   */
+  triggerImmediateSync() {
+    if (!this.active) return;
+    this.lastConnections.clear();
+
+    const now = Date.now();
+    for (const [peerNodeId, entry] of this.discoveredDevices.entries()) {
+      if (!entry || !entry.device) continue;
+      if (now - (entry.lastSeen || 0) > 60000) continue;
+      if (this.connectingPeers.has(peerNodeId)) continue;
+
+      const jitterMs = 100 + Math.floor(Math.random() * 400);
+      setTimeout(() => {
+        if (this.active && !this.connectingPeers.has(peerNodeId)) {
+          this._connectAndSync(entry.device, peerNodeId);
+        }
+      }, jitterMs);
+    }
+  }
+
+  /**
+   * Build a compact JSON payload that fits in a single GATT characteristic read (<= 450 bytes),
+   * prioritizing the newest events first. Full event lists are also pushed via chunked GATT writes.
+   */
+  _buildReadCharacteristicPayload() {
+    if (!this.localPayload || this.localPayload === "[]") {
+      return "[]";
+    }
+    if (Buffer.byteLength(this.localPayload, "utf-8") <= MAX_GATT_READ_BYTES) {
+      return this.localPayload;
+    }
+    try {
+      const parsed = JSON.parse(this.localPayload);
+      if (!Array.isArray(parsed) || parsed.length === 0) return "[]";
+      const sorted = [...parsed].sort(
+        (a, b) => (b.created_at || b.createdAt || 0) - (a.created_at || a.createdAt || 0)
+      );
+      const selected = [];
+      for (const evt of sorted) {
+        selected.push(evt);
+        const candidate = JSON.stringify(selected);
+        if (Buffer.byteLength(candidate, "utf-8") > MAX_GATT_READ_BYTES) {
+          selected.pop();
+          break;
+        }
+      }
+      return JSON.stringify(selected);
+    } catch (e) {
+      return "[]";
+    }
   }
 
   async _syncLocalPayloadToGatt() {
-    if (this.peripheral && this.active) {
+    if (this.peripheral && this.active && this.peripheralReady) {
       try {
-        const chunks = chunkPayload(this.localPayload);
-        const primaryPayload = chunks.length === 1 ? chunks[0] : chunks[0];
-        const base64Val = Buffer.from(primaryPayload).toString("base64");
+        const readPayload = this._buildReadCharacteristicPayload();
+        // Pass a Buffer so peripheral.updateValue's value.toString('base64') encodes UTF-8 -> Base64 once
+        const payloadBuffer = Buffer.from(readPayload, "utf-8");
         await this.peripheral.updateValue(
           SERVICE_UUID,
           CHAR_READ_UUID,
-          base64Val
+          payloadBuffer
         );
       } catch (err) {
         console.error("[PeerDiscovery] Failed to update GATT payload:", err.message);
       }
+    }
+  }
+
+  _handleIncomingChunkBase64(base64Value, peerAddress) {
+    try {
+      const chunkStr = Buffer.from(base64Value, "base64").toString("utf-8");
+      const fullPayload = this.reassembler.feedChunk(chunkStr);
+      if (fullPayload && this.onPayloadReceived) {
+        this.onPayloadReceived(peerAddress || "unknown-peer", fullPayload);
+      }
+    } catch (err) {
+      console.error("[PeerDiscovery] Error processing incoming GATT write:", err);
     }
   }
 
@@ -189,6 +280,7 @@ export class PeerDiscoveryManager {
     }
 
     this.active = true;
+    this.isScanning = true;
     console.log(`[PeerDiscovery] Starting production BLE mesh for Node ${this.nodeId}...`);
 
     // 1. Initialize Peripheral / GATT Server Advertising
@@ -205,57 +297,120 @@ export class PeerDiscoveryManager {
 
       if (!PeripheralModule) return;
 
-      const advName = `MeshSync-${this.nodeId || "node"}`;
-      PeripheralModule.setDeviceName(advName);
+      // Keep advertisement local name <= 17 chars ("MeshSync-" + 8 chars) so it never exceeds 31-byte legacy BLE adv limit
+      const advName = `MeshSync-${this.shortNodeId}`;
+      await PeripheralModule.setDeviceName(advName);
       this.peripheral = new PeripheralModule();
 
-      this.peripheral.on("ready", async () => {
-        if (!this.isScanning) return;
-        try {
-          await this.peripheral.addService(SERVICE_UUID, true);
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 1500);
 
-          // Read Characteristic (for peers to pull our events)
-          await this.peripheral.addCharacteristic(
-            SERVICE_UUID,
-            CHAR_READ_UUID,
-            Property.READ | Property.NOTIFY,
-            Permission.READABLE
-          );
+        this.peripheral.on("error", (err) => {
+          console.warn("[PeerDiscovery] Peripheral error:", err?.message || err);
+          clearTimeout(timeout);
+          resolve();
+        });
 
-          // Write Characteristic (for peers to push their unsynced events to us)
-          await this.peripheral.addCharacteristic(
-            SERVICE_UUID,
-            CHAR_WRITE_UUID,
-            Property.WRITE | Property.WRITE_NO_RESPONSE,
-            Permission.WRITEABLE
-          );
-
-          if (!this.isScanning) return;
-          await this._syncLocalPayloadToGatt();
-          await this.peripheral.startAdvertising();
-          if (this.isScanning) {
-            console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
+        this.peripheral.on("ready", async () => {
+          if (!this.active) {
+            clearTimeout(timeout);
+            resolve();
+            return;
           }
-        } catch (err) {
-          if (this.isScanning) {
-            console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+          try {
+            await this.peripheral.addService(SERVICE_UUID, true);
+
+            // Read Characteristic (for peers to pull our recent events)
+            await this.peripheral.addCharacteristic(
+              SERVICE_UUID,
+              CHAR_READ_UUID,
+              Property.READ | Property.NOTIFY,
+              Permission.READABLE
+            );
+
+            // Write Characteristic (for peers to push their chunked events to us)
+            await this.peripheral.addCharacteristic(
+              SERVICE_UUID,
+              CHAR_WRITE_UUID,
+              Property.WRITE | Property.WRITE_NO_RESPONSE,
+              Permission.WRITEABLE
+            );
+
+            if (!this.active) {
+              clearTimeout(timeout);
+              resolve();
+              return;
+            }
+            this.peripheralReady = true;
+            await this._syncLocalPayloadToGatt();
+            await this.peripheral.startAdvertising(
+              {},
+              {
+                connectable: true,
+                includeDeviceName: true,
+              }
+            );
+            if (this.active) {
+              console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
+            }
+          } catch (err) {
+            if (this.active) {
+              console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+            }
+          } finally {
+            clearTimeout(timeout);
+            resolve();
           }
-        }
+        });
       });
 
-      // Handle incoming writes from connected Central peers
-      if (typeof this.peripheral.on === "function") {
-        this.peripheral.on("characteristicWrite", (charUuid, base64Value, peerAddress) => {
-          if (charUuid && charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase()) {
-            try {
-              const chunkStr = Buffer.from(base64Value, "base64").toString("utf-8");
-              const fullPayload = this.reassembler.feedChunk(chunkStr);
-              if (fullPayload && this.onPayloadReceived) {
-                this.onPayloadReceived(peerAddress || "unknown-peer", fullPayload);
-              }
-            } catch (err) {
-              console.error("[PeerDiscovery] Error processing incoming GATT write:", err);
+      // Listen directly to NativeEventEmitter('onWrite') because Android's ReactNativeMultiBlePeripheralModule.kt
+      // emits id as a String ("0") while the library's JS wrapper compares id === this.id (number 0).
+      if (NativeModules && NativeModules.ReactNativeMultiBlePeripheral) {
+        try {
+          const nativeEmitter = new NativeEventEmitter(NativeModules.ReactNativeMultiBlePeripheral);
+          this.nativeWriteSub = nativeEmitter.addListener("onWrite", (event) => {
+            if (!this.active || !event) return;
+            const charUuid = event.characteristic || event.characteristicUuid;
+            const base64Value = event.value;
+            const peerAddress = event.device || "unknown-peer";
+            if (
+              charUuid &&
+              charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase() &&
+              base64Value
+            ) {
+              this._handleIncomingChunkBase64(base64Value, peerAddress);
             }
+          });
+        } catch (emitterErr) {
+          console.warn("[PeerDiscovery] NativeEventEmitter setup skipped:", emitterErr.message);
+        }
+      }
+
+      // Also attach JS peripheral listeners for iOS / mock environments
+      if (typeof this.peripheral.on === "function") {
+        this.peripheral.on("write", (event) => {
+          if (!this.active || !event) return;
+          const charUuid = event.characteristicUuid || event.characteristic;
+          const base64Value = event.value;
+          const peerAddress = event.device || "unknown-peer";
+          if (
+            charUuid &&
+            charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase() &&
+            base64Value
+          ) {
+            this._handleIncomingChunkBase64(base64Value, peerAddress);
+          }
+        });
+
+        this.peripheral.on("characteristicWrite", (charUuid, base64Value, peerAddress) => {
+          if (!this.active) return;
+          if (
+            charUuid &&
+            charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase() &&
+            base64Value
+          ) {
+            this._handleIncomingChunkBase64(base64Value, peerAddress);
           }
         });
       }
@@ -265,53 +420,77 @@ export class PeerDiscoveryManager {
   }
 
   async _startCentral() {
-    try {
-      this.bleManager.startDeviceScan(
-        null, // Scan all devices to inspect names and service UUIDs reliably on all Android chipsets
-        { allowDuplicates: true },
-        async (error, device) => {
-          if (error) {
-            console.error("[PeerDiscovery] BLE Scan error:", error?.message || error);
-            return;
-          }
+    const beginScan = () => {
+      if (!this.active) return;
+      try {
+        this.bleManager.startDeviceScan(
+          null, // Scan all devices to inspect names and service UUIDs reliably on all Android chipsets
+          { allowDuplicates: true },
+          async (error, device) => {
+            if (error) {
+              console.error("[PeerDiscovery] BLE Scan error:", error?.message || error);
+              return;
+            }
 
-          const devName =
-            device?.name && device.name.startsWith("MeshSync-")
-              ? device.name
-              : device?.localName && device.localName.startsWith("MeshSync-")
-              ? device.localName
-              : null;
+            const rawName = device?.name || device?.localName || "";
+            const hasMeshPrefix =
+              rawName.startsWith("MeshSync-") || rawName.startsWith("MS-");
+            const hasMeshService =
+              Array.isArray(device?.serviceUUIDs) &&
+              device.serviceUUIDs.some(
+                (u) => typeof u === "string" && u.toLowerCase() === SERVICE_UUID.toLowerCase()
+              );
 
-          if (devName) {
-            const peerNodeId = devName.substring("MeshSync-".length).trim();
-            if (!peerNodeId || peerNodeId === this.nodeId) return; // Skip self
+            if (hasMeshPrefix || hasMeshService) {
+              const peerNodeId = hasMeshPrefix
+                ? rawName.replace(/^(MeshSync-|MS-)/, "").trim()
+                : device?.id;
 
-            this.discoveredDevices.set(peerNodeId, { device, lastSeen: Date.now() });
-
-            const now = Date.now();
-            const lastConnect = this.lastConnections.get(peerNodeId) || 0;
-            if (now - lastConnect < CONNECTION_COOLDOWN_MS) return;
-            if (this.connectingPeers.has(peerNodeId)) return;
-
-            // Collision Avoidance: Add randomized jitter delay before connecting
-            const jitterMs = 300 + Math.floor(Math.random() * 800);
-            setTimeout(() => {
-              const currentNow = Date.now();
-              const recentConnect = this.lastConnections.get(peerNodeId) || 0;
               if (
-                this.active &&
-                !this.connectingPeers.has(peerNodeId) &&
-                currentNow - recentConnect >= CONNECTION_COOLDOWN_MS
+                !peerNodeId ||
+                peerNodeId === this.nodeId ||
+                peerNodeId === this.shortNodeId
               ) {
-                this._connectAndSync(device, peerNodeId);
+                return; // Skip self
               }
-            }, jitterMs);
+
+              this.discoveredDevices.set(peerNodeId, { device, lastSeen: Date.now() });
+
+              const now = Date.now();
+              const lastConnect = this.lastConnections.get(peerNodeId) || 0;
+              if (now - lastConnect < CONNECTION_COOLDOWN_MS) return;
+              if (this.connectingPeers.has(peerNodeId)) return;
+
+              // Collision Avoidance: Add randomized jitter delay before connecting
+              const jitterMs = 250 + Math.floor(Math.random() * 600);
+              setTimeout(() => {
+                const currentNow = Date.now();
+                const recentConnect = this.lastConnections.get(peerNodeId) || 0;
+                if (
+                  this.active &&
+                  !this.connectingPeers.has(peerNodeId) &&
+                  currentNow - recentConnect >= CONNECTION_COOLDOWN_MS
+                ) {
+                  this._connectAndSync(device, peerNodeId);
+                }
+              }, jitterMs);
+            }
           }
+        );
+        console.log("[PeerDiscovery] BLE Central scanner started.");
+      } catch (err) {
+        console.error("[PeerDiscovery] Failed to start BLE scanner:", err);
+      }
+    };
+
+    if (typeof this.bleManager.onStateChange === "function") {
+      this.stateSub = this.bleManager.onStateChange((state) => {
+        if (state === "PoweredOn" && this.active) {
+          beginScan();
         }
-      );
-      console.log("[PeerDiscovery] BLE Central scanner started.");
-    } catch (err) {
-      console.error("[PeerDiscovery] Failed to start BLE scanner:", err);
+      }, true);
+    } else {
+      beginScan();
     }
   }
 
@@ -337,26 +516,32 @@ export class PeerDiscoveryManager {
 
       await connectedDevice.discoverAllServicesAndCharacteristics();
 
-      // 1. Central READS Remote Peer's events
+      // 1. Central READS Remote Peer's events using readCharacteristicForService
       try {
-        const readChar = await connectedDevice.readCharacteristic(
-          SERVICE_UUID,
-          CHAR_READ_UUID
-        );
+        const readFn =
+          typeof connectedDevice.readCharacteristicForService === "function"
+            ? connectedDevice.readCharacteristicForService.bind(connectedDevice)
+            : typeof connectedDevice.readCharacteristic === "function"
+            ? connectedDevice.readCharacteristic.bind(connectedDevice)
+            : null;
 
-        if (readChar && readChar.value) {
-          const rawChunk = Buffer.from(readChar.value, "base64").toString("utf-8");
-          const fullPayload = this.reassembler.feedChunk(rawChunk);
-          if (fullPayload && this.onPayloadReceived) {
-            console.log(`[PeerDiscovery] Successfully synced events FROM peer ${peerNodeId}`);
-            this.onPayloadReceived(peerNodeId, fullPayload);
+        if (readFn) {
+          const readChar = await readFn(SERVICE_UUID, CHAR_READ_UUID);
+
+          if (readChar && readChar.value) {
+            const rawChunk = Buffer.from(readChar.value, "base64").toString("utf-8");
+            const fullPayload = this.reassembler.feedChunk(rawChunk);
+            if (fullPayload && this.onPayloadReceived) {
+              console.log(`[PeerDiscovery] Successfully synced events FROM peer ${peerNodeId}`);
+              this.onPayloadReceived(peerNodeId, fullPayload);
+            }
           }
         }
       } catch (readErr) {
         console.warn(`[PeerDiscovery] Read from peer ${peerNodeId} failed:`, readErr.message);
       }
 
-      // 2. Central WRITES Local events TO Remote Peer (Bidirectional Sync)
+      // 2. Central WRITES Local events TO Remote Peer (Bidirectional Chunked Sync)
       try {
         if (this.localPayload && this.localPayload !== "[]") {
           const chunks = chunkPayload(this.localPayload);
@@ -373,14 +558,16 @@ export class PeerDiscoveryManager {
       } catch (writeErr) {
         // Fallback: If WRITE with response fails, attempt writeWithoutResponse
         try {
-          const chunks = chunkPayload(this.localPayload);
-          for (const chunk of chunks) {
-            const base64Chunk = Buffer.from(chunk, "utf-8").toString("base64");
-            await connectedDevice.writeCharacteristicWithoutResponseForService(
-              SERVICE_UUID,
-              CHAR_WRITE_UUID,
-              base64Chunk
-            );
+          if (this.localPayload && this.localPayload !== "[]") {
+            const chunks = chunkPayload(this.localPayload);
+            for (const chunk of chunks) {
+              const base64Chunk = Buffer.from(chunk, "utf-8").toString("base64");
+              await connectedDevice.writeCharacteristicWithoutResponseForService(
+                SERVICE_UUID,
+                CHAR_WRITE_UUID,
+                base64Chunk
+              );
+            }
           }
         } catch (fallbackErr) {
           console.warn(`[PeerDiscovery] Write to peer ${peerNodeId} failed:`, fallbackErr.message);
@@ -404,7 +591,27 @@ export class PeerDiscoveryManager {
   async stop() {
     if (!this.active) return;
     this.active = false;
+    this.isScanning = false;
+    this.peripheralReady = false;
     console.log("[PeerDiscovery] Stopping BLE mesh...");
+
+    if (this.stateSub && typeof this.stateSub.remove === "function") {
+      try {
+        this.stateSub.remove();
+      } catch (err) {
+        // ignore
+      }
+      this.stateSub = null;
+    }
+
+    if (this.nativeWriteSub && typeof this.nativeWriteSub.remove === "function") {
+      try {
+        this.nativeWriteSub.remove();
+      } catch (err) {
+        // ignore
+      }
+      this.nativeWriteSub = null;
+    }
 
     try {
       this.bleManager.stopDeviceScan();
@@ -418,6 +625,14 @@ export class PeerDiscoveryManager {
       } catch (err) {
         // ignore
       }
+      if (typeof this.peripheral.destroy === "function") {
+        try {
+          await this.peripheral.destroy();
+        } catch (err) {
+          // ignore
+        }
+      }
+      this.peripheral = null;
     }
 
     this.connectingPeers.clear();

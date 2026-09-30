@@ -2,6 +2,7 @@ import { MeshTransport } from "./meshTransport";
 import { getStore } from "../store/eventStore";
 import { getNodeId, getActiveRole } from "../store/hotState";
 import { PeerDiscoveryManager } from "./peerDiscoveryManager";
+import { diagLog } from "../utils/diagnosticLogger";
 
 export class BleTransport extends MeshTransport {
   constructor(nodeId, role) {
@@ -16,40 +17,29 @@ export class BleTransport extends MeshTransport {
   async start() {
     if (this.isActive) return;
     this.isActive = true;
-
-    // BLE needs the react-native-ble-plx native module — absent in Expo Go.
-    // Feature-detect once and run as a silent no-op so the UI preview works.
-    // (Jest sets JEST_WORKER_ID and mocks the native layer — don't skip there.)
-    if (!process.env.JEST_WORKER_ID) {
-      try {
-        const { NativeModules } = require("react-native");
-        if (!NativeModules.BlePlx && !NativeModules.ReactNativeMultiBlePeripheral) {
-          console.log("[BLE Transport] Native BLE unavailable (Expo Go preview) — BLE disabled, WebSocket relay active");
-          this.initialized = false;
-          return;
-        }
-      } catch (e) {
-        // react-native import issue — treat as unavailable
-        this.initialized = false;
-        return;
-      }
-    }
-
-    console.log(`[BLE Transport] Starting production BLE transport for node ${this.nodeId} (${this.role})...`);
+    diagLog.info("TRANSPORT", `Starting BLE transport for node ${this.nodeId} (${this.role})`);
 
     try {
       this.peerDiscovery = new PeerDiscoveryManager(
         this.nodeId,
         this.role,
         async (peerId, rawPayload) => {
-          console.log(`[BLE Transport] Processing incoming payload from peer: ${peerId}`);
+          diagLog.info("TRANSPORT", `Processing payload from peer: ${peerId} (${rawPayload?.length || 0} bytes)`);
           try {
             const incomingEvents = JSON.parse(rawPayload);
-            if (Array.isArray(incomingEvents) && incomingEvents.length > 0) {
+            const eventsList = Array.isArray(incomingEvents)
+              ? incomingEvents
+              : incomingEvents?.events && Array.isArray(incomingEvents.events)
+              ? incomingEvents.events
+              : incomingEvents && incomingEvents.id
+              ? [incomingEvents]
+              : [];
+
+            if (eventsList.length > 0) {
               const store = getStore();
               const newEvents = [];
 
-              for (const evt of incomingEvents) {
+              for (const evt of eventsList) {
                 if (!evt || !evt.id) continue;
                 const seen = await store.hasSeen(evt.origin_node_id, evt.seq);
                 if (seen) continue;
@@ -60,15 +50,22 @@ export class BleTransport extends MeshTransport {
               }
 
               if (newEvents.length > 0) {
-                console.log(`[BLE Transport] Ingested ${newEvents.length} new mesh events from peer ${peerId}`);
+                diagLog.success("TRANSPORT", `Ingested ${newEvents.length} new mesh events from peer ${peerId}`);
+                diagLog.updateState({
+                  eventsIngestedCount: (diagLog.state.eventsIngestedCount || 0) + newEvents.length,
+                });
                 this.emitEvents(newEvents);
 
                 // Update local advertising payload with newly ingested events
                 await this.sendEvents();
+              } else {
+                diagLog.info("TRANSPORT", `Received ${eventsList.length} events from ${peerId}, but all were already seen`);
               }
+            } else {
+              diagLog.warn("TRANSPORT", `Received empty event list from peer ${peerId}`);
             }
           } catch (jsonErr) {
-            console.error("[BLE Transport] Failed to parse received JSON payload:", jsonErr);
+            diagLog.error("TRANSPORT", `Failed to parse payload from ${peerId}: ${jsonErr.message}`);
           }
         }
       );
@@ -108,6 +105,11 @@ export class BleTransport extends MeshTransport {
       const allEvents = await getStore().getAll();
       const payloadStr = JSON.stringify(allEvents);
       this.peerDiscovery.updateLocalPayload(payloadStr);
+
+      // Actively push newly broadcasted events to all known active peers immediately
+      if (typeof this.peerDiscovery.syncWithActivePeers === "function") {
+        this.peerDiscovery.syncWithActivePeers().catch(() => {});
+      }
     } catch (err) {
       console.error("[BLE Transport] Error updating BLE payload:", err);
     }

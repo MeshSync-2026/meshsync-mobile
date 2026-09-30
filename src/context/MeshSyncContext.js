@@ -3,6 +3,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { getStore } from "../backend/store/eventStore";
 import {
   initHotState,
+  hydrateHotState,
   getNodeId,
   getActiveRole,
   setActiveRole,
@@ -67,95 +68,168 @@ export function MeshSyncProvider({ children }) {
   const bleTransportRef = useRef(null);
   const wsTransportRef = useRef(null);
 
+  const refreshEventCounts = useCallback(async () => {
+    try {
+      const store = getStore();
+      const allEvents = await store.getAll();
+      const activeNodeId = getNodeId();
+      const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === activeNodeId);
+      const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== activeNodeId);
+      setMyEvents(mine);
+      setRelayedCount(relayed.length);
+    } catch (err) {
+      console.error("[MeshSyncContext] Error fetching events:", err);
+    }
+  }, []);
+
   // Initialize transports and subscriptions on mount
   useEffect(() => {
-    initHotState();
-    const currentNodeId = getNodeId();
-    setNodeIdState(currentNodeId);
-    setActiveRoleState(getActiveRole());
-    setRegisteredState(isRegistered());
-    setAssignedZoneIdState(getAssignedZoneId());
+    let isMounted = true;
+    let unsubscribeStore = () => {};
+    let unsubscribeNet = () => {};
+    let peerInterval = null;
+    let stopCloudSync = () => {};
+    let ble = null;
+    let ws = null;
 
-    // Load user profile
-    getProfile().then((prof) => {
-      if (prof) setUserProfile(prof);
-    }).catch(() => {});
-
-    const store = getStore();
-
-    const refreshEventCounts = async () => {
+    const setup = async () => {
+      // 0. Ensure persistent hot state is hydrated before reading node identity
       try {
-        const allEvents = await store.getAll();
-        const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === currentNodeId);
-        const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== currentNodeId);
-        setMyEvents(mine);
-        setRelayedCount(relayed.length);
-      } catch (err) {
-        console.error("[MeshSyncContext] Error fetching events:", err);
+        await hydrateHotState();
+      } catch (e) {
+        console.warn("[MeshSyncContext] hydrateHotState failed:", e);
       }
+
+      const currentNodeId = getNodeId();
+      if (!isMounted) return;
+
+      setNodeIdState(currentNodeId);
+      setActiveRoleState(getActiveRole());
+      setRegisteredState(isRegistered());
+      setAssignedZoneIdState(getAssignedZoneId());
+
+      // Load user profile
+      try {
+        const prof = await getProfile();
+        if (prof && isMounted) setUserProfile(prof);
+      } catch (_) {}
+
+      const store = getStore();
+
+      // 1. Initial state hydration
+      try {
+        const initialProjection = await store.getProjection();
+        if (initialProjection && isMounted) {
+          setIncidents(initialProjection.incidents || []);
+          setResponders(initialProjection.responders || []);
+          setHistory(initialProjection.history || []);
+          setAssignments(initialProjection.assignments || []);
+        }
+      } catch (err) {
+        console.error("[MeshSyncContext] Error loading initial projection:", err);
+      }
+      await refreshEventCounts();
+
+      if (!isMounted) return;
+
+      // 2. Subscribe to store projection updates
+      unsubscribeStore = store.subscribe((projection) => {
+        if (!isMounted) return;
+        setIncidents(projection?.incidents || []);
+        setResponders(projection?.responders || []);
+        setHistory(projection?.history || []);
+        setAssignments(projection?.assignments || []);
+        refreshEventCounts();
+      });
+
+      // 3. Initialize BLE and WebSocket transports with explicit Node ID
+      try {
+        ble = new BleTransport(currentNodeId, getActiveRole());
+        bleTransportRef.current = ble;
+
+        ble.onEventsReceived(() => {
+          if (!isMounted) return;
+          refreshEventCounts();
+          store.getProjection().then((p) => {
+            if (p && isMounted) {
+              setIncidents(p.incidents || []);
+              setResponders(p.responders || []);
+              setHistory(p.history || []);
+              setAssignments(p.assignments || []);
+            }
+          }).catch(() => {});
+        });
+
+        ble.start();
+      } catch (bleErr) {
+        console.warn("[MeshSyncContext] BLE init error:", bleErr);
+      }
+
+      try {
+        ws = new WsTransport();
+        wsTransportRef.current = ws;
+
+        ws.onEventsReceived(() => {
+          if (!isMounted) return;
+          refreshEventCounts();
+          store.getProjection().then((p) => {
+            if (p && isMounted) {
+              setIncidents(p.incidents || []);
+              setResponders(p.responders || []);
+              setHistory(p.history || []);
+              setAssignments(p.assignments || []);
+            }
+          }).catch(() => {});
+        });
+
+        ws.start();
+      } catch (wsErr) {
+        console.warn("[MeshSyncContext] WS init error:", wsErr);
+      }
+
+      // 4. Track live peer counts
+      peerInterval = setInterval(() => {
+        const blePeers = ble && ble.getPeerCount ? ble.getPeerCount() : 0;
+        const wsPeers = ws && ws.getPeerCount ? ws.getPeerCount() : 0;
+        if (isMounted) {
+          setPeerCount(blePeers + wsPeers);
+        }
+      }, 3000);
+
+      // 5. Start Cloud Sync listener
+      try {
+        stopCloudSync = startCloudSync();
+      } catch (csErr) {
+        console.warn("[MeshSyncContext] CloudSync error:", csErr);
+      }
+
+      // 6. Monitor Internet connectivity
+      try {
+        unsubscribeNet = NetInfo.addEventListener((state) => {
+          if (isMounted) {
+            setIsOnline(Boolean(state.isConnected));
+          }
+        });
+      } catch (_) {}
+
+      // 7. Warm up GPS location without showing permission alert immediately
+      getCurrentLocation({ showAlertOnDenied: false }).then((loc) => {
+        if (loc && isMounted) setUserLocation(loc);
+      }).catch(() => {});
     };
 
-    // 1. Initial state hydration
-    store.getProjection().then((initialProjection) => {
-      if (initialProjection) {
-        setIncidents(initialProjection.incidents || []);
-        setResponders(initialProjection.responders || []);
-        setHistory(initialProjection.history || []);
-        setAssignments(initialProjection.assignments || []);
-      }
-      refreshEventCounts();
-    }).catch((err) => {
-      console.error("[MeshSyncContext] Error loading initial projection:", err);
-      refreshEventCounts();
-    });
-
-    // 2. Subscribe to store projection updates
-    const unsubscribeStore = store.subscribe((projection) => {
-      setIncidents(projection?.incidents || []);
-      setResponders(projection?.responders || []);
-      setHistory(projection?.history || []);
-      setAssignments(projection?.assignments || []);
-      refreshEventCounts();
-    });
-
-    // 3. Initialize BLE and WebSocket transports with explicit Node ID
-    const ble = new BleTransport(currentNodeId, getActiveRole());
-    const ws = new WsTransport();
-    bleTransportRef.current = ble;
-    wsTransportRef.current = ws;
-
-    ble.start();
-    ws.start();
-
-    // 4. Track live peer counts
-    const peerInterval = setInterval(() => {
-      const blePeers = ble.getPeerCount ? ble.getPeerCount() : 0;
-      const wsPeers = ws.getPeerCount ? ws.getPeerCount() : 0;
-      setPeerCount(blePeers + wsPeers);
-    }, 3000);
-
-    // 5. Start Cloud Sync listener
-    const stopCloudSync = startCloudSync();
-
-    // 6. Monitor Internet connectivity
-    const unsubscribeNet = NetInfo.addEventListener((state) => {
-      setIsOnline(Boolean(state.isConnected));
-    });
-
-    // 7. Warm up GPS location without showing permission alert immediately
-    getCurrentLocation({ showAlertOnDenied: false }).then((loc) => {
-      if (loc) setUserLocation(loc);
-    }).catch(() => {});
+    setup();
 
     return () => {
+      isMounted = false;
       unsubscribeStore();
       unsubscribeNet();
-      clearInterval(peerInterval);
+      if (peerInterval) clearInterval(peerInterval);
       stopCloudSync();
-      ble.stop();
-      ws.stop();
+      if (ble) ble.stop();
+      if (ws) ws.stop();
     };
-  }, []);
+  }, [refreshEventCounts]);
 
   /**
    * Refresh current device GPS coordinates (shows alert if permission denied)
@@ -167,17 +241,6 @@ export function MeshSyncProvider({ children }) {
     }
     return loc;
   }, []);
-
-  // Background services: SOS heartbeat + tombstone GC
-  useEffect(() => {
-    setActiveSosState(getActiveSosIncidentId());
-    startHeartbeat(broadcastEvent);
-    startGc(broadcastEvent);
-    return () => {
-      stopHeartbeat();
-      stopGc();
-    };
-  }, [broadcastEvent]);
 
   /**
    * Broadcast an event across all active transports and trigger cloud sync.
@@ -204,6 +267,18 @@ export function MeshSyncProvider({ children }) {
       console.log("[MeshSyncContext] cloud sync deferred:", err.message)
     );
   }, []);
+
+  // Background services: SOS heartbeat + tombstone GC — must run AFTER
+  // broadcastEvent is defined (const TDZ would hand undefined to the services)
+  useEffect(() => {
+    setActiveSosState(getActiveSosIncidentId());
+    startHeartbeat(broadcastEvent);
+    startGc(broadcastEvent);
+    return () => {
+      stopHeartbeat();
+      stopGc();
+    };
+  }, [broadcastEvent]);
 
   /**
    * Send Emergency SOS (Captures GPS coordinates if available, otherwise falls back to landmark / profile info)
@@ -247,10 +322,21 @@ export function MeshSyncProvider({ children }) {
 
     await store.insert(event);
     setActiveSosState(event.incident_id); // flip UI to CANCEL immediately
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
+    await refreshEventCounts();
+
+    try {
+      const proj = await store.getProjection();
+      if (proj) {
+        setIncidents(proj.incidents || []);
+        setResponders(proj.responders || []);
+        setHistory(proj.history || []);
+      }
+    } catch (_) {}
 
     return { success: true, event };
-  }, [userLocation, userProfile, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent, refreshEventCounts]);
 
   /**
    * Report a Hazard (Captures GPS coordinates if available, otherwise falls back to landmark / title / profile landmark)
@@ -274,10 +360,21 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
+    await refreshEventCounts();
+
+    try {
+      const proj = await store.getProjection();
+      if (proj) {
+        setIncidents(proj.incidents || []);
+        setResponders(proj.responders || []);
+        setHistory(proj.history || []);
+      }
+    } catch (_) {}
 
     return { success: true, event };
-  }, [userLocation, userProfile, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent, refreshEventCounts]);
 
   /**
    * Submit Life Safety / Need Help status update
@@ -302,14 +399,25 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setMyEvents((prev) => [event, ...(prev || []).filter((e) => e.id !== event.id)]);
     await broadcastEvent(event);
+    await refreshEventCounts();
+
+    try {
+      const proj = await store.getProjection();
+      if (proj) {
+        setIncidents(proj.incidents || []);
+        setResponders(proj.responders || []);
+        setHistory(proj.history || []);
+      }
+    } catch (_) {}
 
     // Persist so the next SOS can carry severity/status
     setLastStatus({ safety: safetyCode, water: waterCode, injury: injuryCode, people: peopleCount });
     if (landmarkName) setLandmark(landmarkName);
 
     return { success: true, event };
-  }, [userLocation, userProfile, broadcastEvent]);
+  }, [userLocation, userProfile, broadcastEvent, refreshEventCounts]);
 
   /**
    * Dispatch Responder En Route to an incident

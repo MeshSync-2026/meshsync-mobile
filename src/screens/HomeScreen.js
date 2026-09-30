@@ -32,6 +32,8 @@ const SAFETY_LABEL = { [SAFETY.SAFE]: 'Safe', [SAFETY.NEED_HELP]: 'Need Help', [
 const WATER_LABEL = { [WATER.GOOD]: 'Enough food & water', [WATER.LOW]: 'Low food & water', [WATER.NONE]: 'No food & water' };
 const INJURY_LABEL = { [INJURY.NONE]: 'No injuries', [INJURY.MINOR]: 'Minor injury', [INJURY.SEVERE]: 'Severe injury' };
 
+import MeshDiagnosticsModal from '../components/MeshDiagnosticsModal';
+
 function haversine(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -65,6 +67,7 @@ export default function HomeScreen({ navigation }) {
   } = useMeshSync();
   const [isSending, setIsSending] = useState(false);
   const [alertBanner, setAlertBanner] = useState(null);
+  const [showDiag, setShowDiag] = useState(false);
   const insets = useSafeAreaInsets();
 
   // Pulse animation (civilian only)
@@ -381,12 +384,18 @@ export default function HomeScreen({ navigation }) {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg.primary }]}>
       <View style={[styles.statusBar, { backgroundColor: colors.bg.primary, borderBottomColor: colors.border.subtle, paddingTop: insets.top + 10 }]}>
-        <View style={styles.statusLeft}>
+        <TouchableOpacity
+          style={styles.statusLeft}
+          activeOpacity={0.7}
+          onPress={() => setShowDiag(true)}
+          accessibilityLabel="Open mesh diagnostics"
+        >
           <Ionicons name="git-network-outline" size={16} color={colors.accent.primary} />
           <Text style={[styles.statusText, { color: colors.text.primary }]}>
             {peerCount} {peerCount === 1 ? 'peer' : 'peers'}
           </Text>
-        </View>
+          <Ionicons name="bug-outline" size={11} color={colors.text.tertiary} />
+        </TouchableOpacity>
         <View style={styles.statusRight}>
           <Ionicons name={isOnline ? 'cloud' : 'cloud-offline'} size={14} color={colors.text.tertiary} />
           <Text style={[styles.statusSub, { color: colors.text.tertiary }]}>
@@ -402,6 +411,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
       {isCivilian ? renderCivilianHome() : renderResponderHome()}
+      <MeshDiagnosticsModal visible={showDiag} onClose={() => setShowDiag(false)} />
     </View>
   );
 }

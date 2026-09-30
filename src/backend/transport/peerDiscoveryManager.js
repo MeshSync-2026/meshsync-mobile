@@ -4,6 +4,7 @@
 import { Platform, PermissionsAndroid } from "react-native";
 import { BleManager } from "react-native-ble-plx";
 import { Buffer } from "buffer";
+import { diagLog } from "../utils/diagnosticLogger";
 
 // Custom UUIDs for MeshSync BLE mesh network
 export const SERVICE_UUID = "d3f9c1e7-e4e3-406f-9c1d-77a427ea2a3b";
@@ -21,24 +22,62 @@ export async function requestBluetoothPermissions() {
 
   try {
     if (Platform.Version >= 31) {
+      // Check if Bluetooth permissions are already granted
+      if (typeof PermissionsAndroid.check === "function") {
+        const hasScan = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
+        const hasConnect = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+        const hasAdv = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE);
+        if (hasScan && hasConnect) {
+          diagLog.success("PERM", "Bluetooth permissions already granted", { hasScan, hasConnect, hasAdv });
+          diagLog.updateState({ permissions: { hasScan, hasConnect, hasAdv } });
+          return true;
+        }
+      }
+
       const permissions = [
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ];
+      diagLog.info("PERM", "Requesting Bluetooth & Location permissions from user...");
       const granted = await PermissionsAndroid.requestMultiple(permissions);
-      return Object.values(granted).every(
-        (status) => status === PermissionsAndroid.RESULTS.GRANTED
-      );
+      diagLog.info("PERM", "Permissions result", granted);
+      diagLog.updateState({ permissions: granted });
+
+      // On Android 12+ (API 31+), BLUETOOTH_SCAN and BLUETOOTH_CONNECT are the mandatory permissions.
+      // Do not block BLE operation if ACCESS_FINE_LOCATION is denied or approximate.
+      const scanGranted =
+        granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] === PermissionsAndroid.RESULTS.GRANTED;
+      const connectGranted =
+        granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED;
+
+      if (!scanGranted || !connectGranted) {
+        diagLog.error("PERM", "Mandatory Bluetooth permissions denied!", { scanGranted, connectGranted });
+      } else {
+        diagLog.success("PERM", "Mandatory Bluetooth permissions granted!");
+      }
+
+      return Boolean(scanGranted && connectGranted);
     } else {
+      if (typeof PermissionsAndroid.check === "function") {
+        const hasFine = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        if (hasFine) {
+          diagLog.success("PERM", "Location permission already granted (Android < 31)");
+          diagLog.updateState({ permissions: { hasFine } });
+          return true;
+        }
+      }
+      diagLog.info("PERM", "Requesting ACCESS_FINE_LOCATION (Android < 31)...");
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
       );
+      diagLog.info("PERM", `Location permission result: ${granted}`);
+      diagLog.updateState({ permissions: { ACCESS_FINE_LOCATION: granted } });
       return granted === PermissionsAndroid.RESULTS.GRANTED;
     }
   } catch (err) {
-    console.error("[PeerDiscovery] Permissions request failed:", err);
+    diagLog.error("PERM", `Permissions request failed: ${err.message}`);
     return false;
   }
 }
@@ -141,6 +180,8 @@ export class PeerDiscoveryManager {
     this.lastConnections = new Map(); // peerNodeId -> timestamp
     this.connectingPeers = new Set(); // peerNodeId
     this.discoveredDevices = new Map(); // peerNodeId -> { device, lastSeen }
+
+    diagLog.updateState({ nodeId: this.nodeId, role: this.role });
   }
 
   getPeerCount() {
@@ -165,31 +206,47 @@ export class PeerDiscoveryManager {
   async _syncLocalPayloadToGatt() {
     if (this.peripheral && this.active) {
       try {
-        const chunks = chunkPayload(this.localPayload);
-        const primaryPayload = chunks.length === 1 ? chunks[0] : chunks[0];
-        const base64Val = Buffer.from(primaryPayload).toString("base64");
+        let payloadToSend = this.localPayload;
+        // If payload is larger than standard BLE ATT budget, extract the most recent events
+        if (Buffer.byteLength(payloadToSend, "utf-8") > 512) {
+          try {
+            const parsed = JSON.parse(payloadToSend);
+            if (Array.isArray(parsed)) {
+              const trimmed = [];
+              for (let i = parsed.length - 1; i >= 0; i--) {
+                trimmed.unshift(parsed[i]);
+                if (Buffer.byteLength(JSON.stringify(trimmed), "utf-8") > 480) {
+                  trimmed.shift();
+                  break;
+                }
+              }
+              payloadToSend = JSON.stringify(trimmed);
+            }
+          } catch (_) {}
+        }
+        const base64Val = Buffer.from(payloadToSend, "utf-8").toString("base64");
         await this.peripheral.updateValue(
           SERVICE_UUID,
           CHAR_READ_UUID,
           base64Val
         );
       } catch (err) {
-        console.error("[PeerDiscovery] Failed to update GATT payload:", err.message);
+        diagLog.warn("PERIPHERAL", `Failed to update GATT payload: ${err.message}`);
       }
     }
   }
 
   async start() {
     if (this.active) return;
+    diagLog.info("MESH", `Starting production BLE mesh for Node ${this.nodeId}...`);
 
     const hasPermission = await requestBluetoothPermissions();
     if (!hasPermission) {
-      console.warn("[PeerDiscovery] Bluetooth permissions denied. BLE mesh unavailable.");
+      diagLog.error("MESH", "Bluetooth permissions denied. BLE mesh cannot start.");
       return;
     }
 
     this.active = true;
-    console.log(`[PeerDiscovery] Starting production BLE mesh for Node ${this.nodeId}...`);
 
     // 1. Initialize Peripheral / GATT Server Advertising
     await this._startPeripheral();
@@ -203,14 +260,35 @@ export class PeerDiscoveryManager {
       const PeripheralModule = require("react-native-multi-ble-peripheral").default;
       const { Permission, Property } = require("react-native-multi-ble-peripheral");
 
-      if (!PeripheralModule) return;
+      if (!PeripheralModule) {
+        diagLog.error("PERIPHERAL", "react-native-multi-ble-peripheral module not found");
+        diagLog.updateState({ peripheralStatus: "Unavailable", peripheralError: "Native module missing" });
+        return;
+      }
 
-      const advName = `MeshSync-${this.nodeId || "node"}`;
-      PeripheralModule.setDeviceName(advName);
+      const shortId = (this.nodeId || "node").slice(-6);
+      const advName = `MS-${shortId}`;
+      diagLog.info("PERIPHERAL", `Configuring BLE Peripheral name as ${advName}...`);
+
+      try {
+        await PeripheralModule.setDeviceName(advName);
+      } catch (e) {
+        diagLog.warn("PERIPHERAL", `setDeviceName warning: ${e?.message || e}`);
+      }
+
       this.peripheral = new PeripheralModule();
 
+      if (typeof this.peripheral.on === "function") {
+        this.peripheral.on("error", (err) => {
+          const msg = err?.message || String(err);
+          diagLog.error("PERIPHERAL", `BLE Peripheral native error: ${msg}`);
+          diagLog.updateState({ peripheralStatus: "Error", peripheralError: msg });
+        });
+      }
+
       this.peripheral.on("ready", async () => {
-        if (!this.isScanning) return;
+        if (!this.active) return;
+        diagLog.info("PERIPHERAL", "Peripheral manager ready. Adding GATT service & characteristics...");
         try {
           await this.peripheral.addService(SERVICE_UUID, true);
 
@@ -230,71 +308,190 @@ export class PeerDiscoveryManager {
             Permission.WRITEABLE
           );
 
-          if (!this.isScanning) return;
+          if (!this.active) return;
           await this._syncLocalPayloadToGatt();
-          await this.peripheral.startAdvertising();
-          if (this.isScanning) {
-            console.log(`[PeerDiscovery] BLE Peripheral advertising started as ${advName}`);
+
+          // Pass options object directly so services are not duplicated with empty service-data.
+          // This keeps the legacy BLE packet under the mandatory 31-byte Android limit.
+          diagLog.info("PERIPHERAL", `Calling startAdvertising for ${advName}...`);
+          await this.peripheral.startAdvertising({
+            includeDeviceName: true,
+            connectable: true,
+          });
+
+          if (this.active) {
+            diagLog.success("PERIPHERAL", `Advertising active as ${advName}`);
+            diagLog.updateState({ peripheralStatus: `Advertising: ${advName}`, peripheralError: null });
           }
         } catch (err) {
-          if (this.isScanning) {
-            console.error("[PeerDiscovery] Failed to start peripheral services:", err);
+          if (this.active) {
+            const msg = err?.message || String(err);
+            diagLog.error("PERIPHERAL", `Failed to start peripheral advertising: ${msg}`);
+            diagLog.updateState({ peripheralStatus: "Failed", peripheralError: msg });
           }
         }
       });
 
       // Handle incoming writes from connected Central peers
       if (typeof this.peripheral.on === "function") {
-        this.peripheral.on("characteristicWrite", (charUuid, base64Value, peerAddress) => {
-          if (charUuid && charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase()) {
-            try {
-              const chunkStr = Buffer.from(base64Value, "base64").toString("utf-8");
-              const fullPayload = this.reassembler.feedChunk(chunkStr);
-              if (fullPayload && this.onPayloadReceived) {
-                this.onPayloadReceived(peerAddress || "unknown-peer", fullPayload);
-              }
-            } catch (err) {
-              console.error("[PeerDiscovery] Error processing incoming GATT write:", err);
+        const onWriteHandler = (arg1, arg2, arg3) => {
+          try {
+            // react-native-multi-ble-peripheral emits:
+            // 'write', { device, service, characteristic, offset, value }
+            let charUuid, base64Val, peerAddr;
+            if (arg1 && typeof arg1 === "object") {
+              charUuid = arg1.characteristic;
+              base64Val = arg1.value;
+              peerAddr = arg1.device;
+            } else {
+              charUuid = arg1;
+              base64Val = arg2;
+              peerAddr = arg3;
             }
+
+            diagLog.info("GATT_WRITE", `Incoming write from ${peerAddr || "peer"}`);
+
+            if (charUuid && charUuid.toLowerCase() === CHAR_WRITE_UUID.toLowerCase()) {
+              if (base64Val) {
+                const chunkStr = Buffer.from(base64Val, "base64").toString("utf-8");
+                const fullPayload = this.reassembler.feedChunk(chunkStr);
+                if (fullPayload && this.onPayloadReceived) {
+                  diagLog.success("GATT_WRITE", `Reassembled full payload (${fullPayload.length} chars) from ${peerAddr}`);
+                  this.onPayloadReceived(peerAddr || "unknown-peer", fullPayload);
+                }
+              }
+            }
+          } catch (err) {
+            diagLog.error("GATT_WRITE", `Error processing incoming GATT write: ${err.message}`);
           }
-        });
+        };
+
+        this.peripheral.on("write", onWriteHandler);
+        this.peripheral.on("characteristicWrite", onWriteHandler);
       }
     } catch (err) {
-      console.warn("[PeerDiscovery] react-native-multi-ble-peripheral native module not available:", err.message);
+      diagLog.warn("PERIPHERAL", `react-native-multi-ble-peripheral not available: ${err.message}`);
+    }
+  }
+
+  async syncWithActivePeers() {
+    if (!this.active || this.discoveredDevices.size === 0) return;
+    const now = Date.now();
+    for (const [peerId, record] of this.discoveredDevices.entries()) {
+      if (now - record.lastSeen < 60000 && !this.connectingPeers.has(peerId)) {
+        this._connectAndSync(record.device, peerId).catch(() => {});
+      }
     }
   }
 
   async _startCentral() {
     try {
+      // Check current Bluetooth adapter state before scanning
+      if (typeof this.bleManager.state === "function") {
+        const currentState = await this.bleManager.state();
+        diagLog.info("SCANNER", `Initial Bluetooth adapter state: ${currentState}`);
+        diagLog.updateState({ adapterState: currentState });
+
+        if (currentState === "PoweredOn") {
+          this._beginScanning();
+          return;
+        }
+
+        diagLog.warn("SCANNER", `Adapter is '${currentState}'. Awaiting PoweredOn state...`);
+        if (typeof this.bleManager.onStateChange === "function") {
+          const subscription = this.bleManager.onStateChange((state) => {
+            diagLog.info("SCANNER", `Adapter state transitioned to: ${state}`);
+            diagLog.updateState({ adapterState: state });
+            if (state === "PoweredOn") {
+              diagLog.success("SCANNER", "Adapter is now PoweredOn. Launching central scanner...");
+              try {
+                if (subscription && typeof subscription.remove === "function") {
+                  subscription.remove();
+                }
+              } catch (_) {}
+              if (this.active) {
+                this._beginScanning();
+              }
+            }
+          }, true);
+          return;
+        }
+      }
+
+      this._beginScanning();
+    } catch (err) {
+      diagLog.error("SCANNER", `Failed to verify BLE state: ${err?.message || err}`);
+      this._beginScanning();
+    }
+  }
+
+  _beginScanning() {
+    if (!this.active) return;
+
+    try {
+      this.bleManager.stopDeviceScan();
+    } catch (_) {}
+
+    try {
+      diagLog.info("SCANNER", "Starting BLE device scan (listening for MeshSync / MS- devices)...");
+      diagLog.updateState({ scannerStatus: "Scanning", scannerError: null });
+
       this.bleManager.startDeviceScan(
         null, // Scan all devices to inspect names and service UUIDs reliably on all Android chipsets
         { allowDuplicates: true },
         async (error, device) => {
           if (error) {
-            console.error("[PeerDiscovery] BLE Scan error:", error?.message || error);
+            const msg = error?.message || String(error);
+            diagLog.error("SCANNER", `BLE Scan callback error: ${msg}`);
+            diagLog.updateState({ scannerStatus: "Error", scannerError: msg });
+
+            // If scanning fails temporarily, retry after a cooldown window
+            if (this.active && !this._scanRetryTimeout) {
+              this._scanRetryTimeout = setTimeout(() => {
+                this._scanRetryTimeout = null;
+                if (this.active) this._beginScanning();
+              }, 4000);
+            }
             return;
           }
 
           const devName =
-            device?.name && device.name.startsWith("MeshSync-")
+            device?.name && (device.name.startsWith("MeshSync") || device.name.startsWith("MS-"))
               ? device.name
-              : device?.localName && device.localName.startsWith("MeshSync-")
+              : device?.localName && (device.localName.startsWith("MeshSync") || device.localName.startsWith("MS-"))
               ? device.localName
               : null;
 
-          if (devName) {
-            const peerNodeId = devName.substring("MeshSync-".length).trim();
-            if (!peerNodeId || peerNodeId === this.nodeId) return; // Skip self
+          const hasMeshService =
+            device?.serviceUUIDs &&
+            device.serviceUUIDs.some(
+              (u) => u.toLowerCase() === SERVICE_UUID.toLowerCase()
+            );
+
+          if (devName || hasMeshService) {
+            let peerNodeId = devName ? devName.replace(/^(MeshSync-|MeshSync|MS-)/, "").trim() : null;
+            if (!peerNodeId) peerNodeId = device.id;
+            if (peerNodeId === this.nodeId || peerNodeId === this.nodeId.slice(-6)) return; // Skip self
+
+            if (!this.discoveredDevices.has(peerNodeId)) {
+              diagLog.success("DISCOVERY", `Discovered mesh peer: ${peerNodeId} (RSSI: ${device.rssi}, ID: ${device.id})`);
+            }
 
             this.discoveredDevices.set(peerNodeId, { device, lastSeen: Date.now() });
+            diagLog.updateState({ discoveredPeers: Array.from(this.discoveredDevices.keys()) });
 
             const now = Date.now();
             const lastConnect = this.lastConnections.get(peerNodeId) || 0;
             if (now - lastConnect < CONNECTION_COOLDOWN_MS) return;
             if (this.connectingPeers.has(peerNodeId)) return;
 
-            // Collision Avoidance: Add randomized jitter delay before connecting
-            const jitterMs = 300 + Math.floor(Math.random() * 800);
+            // Deterministic collision avoidance:
+            // Higher nodeId initiates immediately; lower nodeId waits a grace period
+            const isHigherNode = String(this.nodeId) > String(peerNodeId);
+            const jitterMs = isHigherNode
+              ? 150 + Math.floor(Math.random() * 250)
+              : 1800 + Math.floor(Math.random() * 500);
+
             setTimeout(() => {
               const currentNow = Date.now();
               const recentConnect = this.lastConnections.get(peerNodeId) || 0;
@@ -309,9 +506,10 @@ export class PeerDiscoveryManager {
           }
         }
       );
-      console.log("[PeerDiscovery] BLE Central scanner started.");
     } catch (err) {
-      console.error("[PeerDiscovery] Failed to start BLE scanner:", err);
+      const msg = err?.message || String(err);
+      diagLog.error("SCANNER", `Failed to start BLE scanner: ${msg}`);
+      diagLog.updateState({ scannerStatus: "Failed", scannerError: msg });
     }
   }
 
@@ -321,10 +519,19 @@ export class PeerDiscoveryManager {
     this.lastConnections.set(peerNodeId, Date.now());
 
     let connectedDevice = null;
-    console.log(`[PeerDiscovery] Initiating bidirectional sync with peer: ${peerNodeId}...`);
+    diagLog.info("SYNC", `Initiating bidirectional GATT sync with peer: ${peerNodeId}...`);
+    diagLog.updateState({ lastSyncAttempt: { peerId: peerNodeId, time: new Date().toLocaleTimeString() } });
 
     try {
       connectedDevice = await device.connect({ timeout: 8000 });
+      diagLog.success("SYNC", `GATT connected to peer: ${peerNodeId}`);
+
+      // Request higher connection priority on Android for fast GATT operations
+      if (Platform.OS === "android" && typeof connectedDevice.requestConnectionPriority === "function") {
+        try {
+          await connectedDevice.requestConnectionPriority(1); // 1 = HIGH
+        } catch (_) {}
+      }
 
       // Request higher MTU if supported (Android)
       if (Platform.OS === "android" && typeof connectedDevice.requestMTU === "function") {
@@ -335,10 +542,12 @@ export class PeerDiscoveryManager {
         }
       }
 
+      diagLog.info("SYNC", `Discovering services on peer ${peerNodeId}...`);
       await connectedDevice.discoverAllServicesAndCharacteristics();
 
       // 1. Central READS Remote Peer's events
       try {
+        diagLog.info("SYNC", `Reading events from peer ${peerNodeId}...`);
         const readChar = await connectedDevice.readCharacteristic(
           SERVICE_UUID,
           CHAR_READ_UUID
@@ -348,18 +557,19 @@ export class PeerDiscoveryManager {
           const rawChunk = Buffer.from(readChar.value, "base64").toString("utf-8");
           const fullPayload = this.reassembler.feedChunk(rawChunk);
           if (fullPayload && this.onPayloadReceived) {
-            console.log(`[PeerDiscovery] Successfully synced events FROM peer ${peerNodeId}`);
+            diagLog.success("SYNC", `Successfully synced events FROM peer ${peerNodeId}`);
             this.onPayloadReceived(peerNodeId, fullPayload);
           }
         }
       } catch (readErr) {
-        console.warn(`[PeerDiscovery] Read from peer ${peerNodeId} failed:`, readErr.message);
+        diagLog.warn("SYNC", `Read from peer ${peerNodeId} failed: ${readErr.message}`);
       }
 
       // 2. Central WRITES Local events TO Remote Peer (Bidirectional Sync)
       try {
         if (this.localPayload && this.localPayload !== "[]") {
           const chunks = chunkPayload(this.localPayload);
+          diagLog.info("SYNC", `Writing ${chunks.length} local event chunks to peer ${peerNodeId}...`);
           for (const chunk of chunks) {
             const base64Chunk = Buffer.from(chunk, "utf-8").toString("base64");
             await connectedDevice.writeCharacteristicWithResponseForService(
@@ -368,7 +578,8 @@ export class PeerDiscoveryManager {
               base64Chunk
             );
           }
-          console.log(`[PeerDiscovery] Successfully synced local events TO peer ${peerNodeId}`);
+          diagLog.success("SYNC", `Successfully pushed local events TO peer ${peerNodeId}`);
+          diagLog.updateState({ lastSyncResult: { peerId: peerNodeId, success: true } });
         }
       } catch (writeErr) {
         // Fallback: If WRITE with response fails, attempt writeWithoutResponse
@@ -382,18 +593,23 @@ export class PeerDiscoveryManager {
               base64Chunk
             );
           }
+          diagLog.success("SYNC", `Pushed local events TO peer ${peerNodeId} (without response)`);
+          diagLog.updateState({ lastSyncResult: { peerId: peerNodeId, success: true } });
         } catch (fallbackErr) {
-          console.warn(`[PeerDiscovery] Write to peer ${peerNodeId} failed:`, fallbackErr.message);
+          diagLog.warn("SYNC", `Write to peer ${peerNodeId} failed: ${fallbackErr.message}`);
+          diagLog.updateState({ lastSyncResult: { peerId: peerNodeId, success: false, error: fallbackErr.message } });
         }
       }
     } catch (err) {
-      console.error(`[PeerDiscovery] Sync session with peer ${peerNodeId} failed:`, err.message);
+      const msg = err?.message || String(err);
+      diagLog.error("SYNC", `Sync session with peer ${peerNodeId} failed: ${msg}`);
+      diagLog.updateState({ lastSyncResult: { peerId: peerNodeId, success: false, error: msg } });
     } finally {
       this.connectingPeers.delete(peerNodeId);
       if (connectedDevice) {
         try {
           await connectedDevice.cancelConnection();
-          console.log(`[PeerDiscovery] Disconnected cleanly from peer ${peerNodeId}`);
+          diagLog.info("SYNC", `Disconnected cleanly from peer ${peerNodeId}`);
         } catch (err) {
           // ignore disconnect errors
         }

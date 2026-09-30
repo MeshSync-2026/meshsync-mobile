@@ -1,4 +1,6 @@
 .expo/
+android/
+ios/
 
 
 # Logs

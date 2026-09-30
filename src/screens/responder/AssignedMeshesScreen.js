@@ -12,10 +12,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
 import { useMeshSync } from '../../context/MeshSyncContext';
 import { REPORT_TYPE, SEVERITY, STATUS } from '../../backend/shared/enums';
+import { ROLE } from '../../backend/store/hotState';
+import { clearResponderSession } from '../../utils/storage';
 
 export default function AssignedMeshesScreen({ navigation }) {
   const { colors, spacing, radius, typography, isDark, toggleScheme } = useTheme();
-  const { incidents, logoutResponder, assignedZoneId, peerCount, assignments, nodeId, userProfile } = useMeshSync();
+  const { incidents, logoutResponder, switchRole, assignedZoneId, peerCount, assignments, nodeId, userProfile } = useMeshSync();
 
   const [isOnDuty, setIsOnDuty] = useState(true);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
@@ -436,9 +438,13 @@ export default function AssignedMeshesScreen({ navigation }) {
               </Text>
               <Pressable
                 onPress={() => {
-                  setActiveRole(ROLE.CIVILIAN);
+                  switchRole(ROLE.CIVILIAN);
                   setIsProfileVisible(false);
-                  navigation.getParent()?.navigate('Main');
+                  const rootNav = navigation.getParent() || navigation;
+                  rootNav.reset({
+                    index: 0,
+                    routes: [{ name: 'Main' }],
+                  });
                 }}
                 style={({ pressed }) => [
                   styles.switchRoleBtn,
@@ -452,8 +458,9 @@ export default function AssignedMeshesScreen({ navigation }) {
               </Pressable>
 
               <Pressable
-                onPress={() => {
-                  deregisterResponder();
+                onPress={async () => {
+                  logoutResponder();
+                  await clearResponderSession();
                   setIsProfileVisible(false);
                   navigation.reset({
                     index: 0,

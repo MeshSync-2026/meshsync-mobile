@@ -217,7 +217,17 @@ export default function ResponderLoginScreen({
           <View style={styles.topActions}>
 
             <Pressable
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  const rootNav = navigation.getParent() || navigation;
+                  rootNav.reset({
+                    index: 0,
+                    routes: [{ name: 'Main' }],
+                  });
+                }
+              }}
               style={[
                 styles.iconBtn,
                 {

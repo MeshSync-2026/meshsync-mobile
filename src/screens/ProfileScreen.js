@@ -32,7 +32,7 @@ export default function ProfileScreen({ navigation }) {
     toggleScheme,
   } = useTheme();
 
-  const { nodeId, isRegistered, activeRole, myEvents, relayedCount } = useMeshSync();
+  const { nodeId, isRegistered, activeRole, switchRole, myEvents, relayedCount } = useMeshSync();
   const [profile, setProfile] = useState(null);
   const [relayAuto, setRelayAuto] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
@@ -298,7 +298,14 @@ export default function ProfileScreen({ navigation }) {
                 borderRadius: radius.md,
               },
             ]}
-            onPress={() => navigation.navigate('Responder')}
+            onPress={() => {
+              if (isRegistered) {
+                switchRole(ROLE.RESPONDER);
+                navigation.navigate('Responder', { screen: 'AssignedMeshes' });
+              } else {
+                navigation.navigate('Responder', { screen: 'ResponderLogin' });
+              }
+            }}
           >
             <Text
               style={[

@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Switch,
   StyleSheet,
   Alert,
 } from 'react-native';
@@ -25,8 +24,6 @@ const PROFILE_STORAGE_KEY = '@meshsync_profile';
 
 const EMPTY_PROFILE = {
   fullName: '',
-  nic: '',
-  phone: '',
   homeLandmark: '',
   landmark: '',
 };
@@ -42,10 +39,8 @@ export default function ProfileScreen({ navigation }) {
   } = useTheme();
 
   const { nodeId, isRegistered, activeRole, myEvents, relayedCount, switchRole } = useMeshSync();
-  const { lang, setLang } = useApp();
+  const { lang, setLang, t } = useApp();
   const [profile, setProfile] = useState(null);
-  const [relayAuto, setRelayAuto] = useState(true);
-  const [wifiOnly, setWifiOnly] = useState(false);
 
   // Load the locally saved profile whenever this screen becomes active.
   useFocusEffect(
@@ -88,15 +83,15 @@ export default function ProfileScreen({ navigation }) {
 
   const resetAppData = () => {
     Alert.alert(
-      'Reset App Data',
-      'This will erase all local data on this device and return to onboarding.',
+      t('profile.resetApp'),
+      t('profile.resetConfirm'),
       [
         {
-          text: 'Cancel',
+          text: t('common.no'),
           style: 'cancel',
         },
         {
-          text: 'Reset',
+          text: t('profile.resetApp'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -105,8 +100,8 @@ export default function ProfileScreen({ navigation }) {
               resetAll(); // clears role, registration, node_id, saved status/landmark
 
               Alert.alert(
-                'Data Reset',
-                'All local data cleared. You can choose a role again.'
+                t('profile.resetDone'),
+                t('profile.resetDoneDesc')
               );
 
               navigation.replace('Onboarding');
@@ -128,20 +123,20 @@ export default function ProfileScreen({ navigation }) {
     const next = activeRole === ROLE.CIVILIAN ? ROLE.CIVILIAN_RESPONDER : ROLE.CIVILIAN;
     switchRole(next);
     Alert.alert(
-      next === ROLE.CIVILIAN_RESPONDER ? 'Responder Mode' : 'Civilian Mode',
+      next === ROLE.CIVILIAN_RESPONDER ? t('profile.responderMode') : t('profile.civilianMode'),
       next === ROLE.CIVILIAN_RESPONDER
-        ? 'You now see nearby incidents and can respond to them.'
-        : 'You are back in civilian mode. The SOS button is available.'
+        ? t('profile.responderModeDesc')
+        : t('profile.civilianModeDesc')
     );
   };
 
   const isCivilianRole = activeRole === ROLE.CIVILIAN;
   const isCivResponder = activeRole === ROLE.CIVILIAN_RESPONDER;
   const roleLabel = isRegistered
-    ? 'Authorized Responder'
+    ? t('profile.authorizedResponder')
     : isCivResponder
-    ? 'Civilian Responder'
-    : 'Civilian';
+    ? t('profile.civilianResponder')
+    : t('profile.civilian');
 
   // Avoid rendering profile fields before AsyncStorage finishes.
   if (!profile) {
@@ -173,24 +168,12 @@ export default function ProfileScreen({ navigation }) {
     );
   }
 
-  /*
-   * Values saved during onboarding:
-   *
-   * profile.fullName
-   * profile.nic
-   * profile.phone
-   *
-   * These are now used instead of hardcoded Nuwan Perera data.
-   */
-
+  // Onboarding collects one field: the user's name/landmark label.
   const displayName =
-    profile.fullName?.trim() || 'MeshSync User';
-
-  const nic =
-    profile.nic?.trim() || 'Not provided';
-
-  const phone =
-    profile.phone?.trim() || 'Not provided';
+    profile.fullName?.trim() ||
+    profile.homeLandmark?.trim() ||
+    profile.landmark?.trim() ||
+    t('profile.meshsyncUser');
 
   return (
     <SafeAreaView
@@ -201,7 +184,7 @@ export default function ProfileScreen({ navigation }) {
       edges={['top']}
     >
       <TopAppBar
-        title="Profile"
+        title={t('profile.title')}
         rightIcon={isDark ? 'light-mode' : 'dark-mode'}
         onRightPress={toggleScheme}
       />
@@ -229,7 +212,7 @@ export default function ProfileScreen({ navigation }) {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <MaterialIcons name="language" size={18} color={colors.onSurfaceVariant} />
-            <Text style={[typography.labelLg, { color: colors.onSurface }]}>Language</Text>
+            <Text style={[typography.labelLg, { color: colors.onSurface }]}>{t('profile.language')}</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {LANGS.map((l) => (
@@ -295,22 +278,6 @@ export default function ProfileScreen({ navigation }) {
               </Text>
             </View>
           </View>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={[
-              styles.iconCircle,
-              {
-                backgroundColor: colors.surfaceContainer,
-              },
-            ]}
-          >
-            <MaterialIcons
-              name="edit"
-              size={20}
-              color={colors.onSurface}
-            />
-          </TouchableOpacity>
         </View>
 
         {/* ROLE SWITCH — Civilian ↔ Civilian Responder (authorized users see their badge only) */}
@@ -340,7 +307,7 @@ export default function ProfileScreen({ navigation }) {
                     { color: colors.onSurface },
                   ]}
                 >
-                  Role: {roleLabel}
+                  {t('profile.role')}: {roleLabel}
                 </Text>
 
                 <Text
@@ -353,8 +320,8 @@ export default function ProfileScreen({ navigation }) {
                   ]}
                 >
                   {isCivilianRole
-                    ? 'SOS button active. Switch to respond to nearby incidents instead.'
-                    : 'Viewing nearby incidents with Help Now. Switch back to send SOS.'}
+                    ? t('profile.civilianModeDesc')
+                    : t('profile.responderModeDesc')}
                 </Text>
               </View>
             </View>
@@ -376,7 +343,7 @@ export default function ProfileScreen({ navigation }) {
                   { color: colors.onPrimary },
                 ]}
               >
-                {isCivilianRole ? 'Switch to Civilian Responder' : 'Switch to Civilian'}
+                {isCivilianRole ? t('profile.switchToResponder') : t('profile.switchToCivilian')}
               </Text>
 
               <MaterialIcons
@@ -414,7 +381,7 @@ export default function ProfileScreen({ navigation }) {
                   { color: colors.onSurface },
                 ]}
               >
-                Authorized Responder
+                {t('profile.authorizedResponder')}
               </Text>
 
               <Text
@@ -427,8 +394,8 @@ export default function ProfileScreen({ navigation }) {
                 ]}
               >
                 {isRegistered
-                  ? 'Active responder session. Access assigned disaster zones and incident navigation.'
-                  : 'Sign in to access assigned meshes and offline maps.'}
+                  ? t('profile.authDescActive')
+                  : t('profile.authDescSignIn')}
               </Text>
             </View>
           </View>
@@ -450,7 +417,7 @@ export default function ProfileScreen({ navigation }) {
                 { color: colors.onPrimary },
               ]}
             >
-              {isRegistered ? 'Open Responder Dashboard' : 'Authenticate as Responder'}
+              {isRegistered ? t('profile.openDashboard') : t('profile.authenticate')}
             </Text>
 
             <MaterialIcons
@@ -462,7 +429,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         {/* PERSONAL DETAILS */}
-        <SectionLabel text="Personal Details" />
+        <SectionLabel text={t('profile.personalDetails')} />
 
         <View
           style={[
@@ -475,86 +442,21 @@ export default function ProfileScreen({ navigation }) {
           ]}
         >
           <Row
-            label="Mesh Node ID"
+            label={t('profile.nodeId')}
             value={nodeId || 'Initializing...'}
             icon="hub"
             border
           />
 
           <Row
-            label="Full Name"
-            value={displayName}
-            icon="chevron-right"
-            border
-          />
-
-          <Row
-            label="NIC Number"
-            value={nic}
-            icon="lock"
-            border
-          />
-
-          <Row
-            label="Phone Number"
-            value={phone}
-            icon="chevron-right"
-            border
-          />
-
-          <Row
-            label="Saved Home / Landmark"
-            value={profile.homeLandmark || profile.landmark || 'Configured during setup'}
+            label={t('profile.nameLandmark')}
+            value={displayName || profile.homeLandmark || profile.landmark || t('profile.configuredSetup')}
             icon="home"
           />
         </View>
 
-        {/* DATA SHARING */}
-        <SectionLabel text="Data Sharing" />
-
-        <View
-          style={[
-            styles.listCard,
-            {
-              backgroundColor: colors.surfaceContainerHigh,
-              borderColor: colors.outlineVariant,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <ToggleRow
-            label="Relay mesh data automatically when I have internet"
-            value={relayAuto}
-            onValueChange={setRelayAuto}
-            border
-          />
-
-          <ToggleRow
-            label="Only relay over Wi-Fi (not mobile data)"
-            value={wifiOnly}
-            onValueChange={setWifiOnly}
-            border
-          />
-
-          <Text
-            style={[
-              typography.labelMd,
-              {
-                color: colors.onSurfaceVariant,
-                opacity: 0.7,
-                padding: spacing.md,
-                lineHeight: 18,
-              },
-            ]}
-          >
-            When your device reconnects, it may upload reports
-            from nearby mesh devices, not just your own, to help
-            reach authorities faster.
-          </Text>
-        </View>
-
         {/* MESH CONTRIBUTION */}
-        <SectionLabel text="Mesh Contribution" />
+        <SectionLabel text={t('profile.meshContribution')} />
 
         <View
           style={[
@@ -581,7 +483,7 @@ export default function ProfileScreen({ navigation }) {
                   { color: colors.onSurface },
                 ]}
               >
-                Reports relayed as data mule
+                {t('profile.relayedMule')}
               </Text>
             </View>
 
@@ -613,7 +515,7 @@ export default function ProfileScreen({ navigation }) {
                 },
               ]}
             >
-              Reset App Data
+              {t('profile.resetApp')}
             </Text>
           </TouchableOpacity>
 
@@ -702,60 +604,6 @@ function Row({ label, value, icon, border }) {
         name={icon}
         size={20}
         color={colors.onSurfaceVariant}
-      />
-    </View>
-  );
-}
-
-/* =========================
-   TOGGLE ROW
-========================= */
-
-function ToggleRow({
-  label,
-  value,
-  onValueChange,
-  border,
-}) {
-  const { colors, spacing, typography } = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.row,
-        border && {
-          borderBottomWidth: 1,
-          borderBottomColor: colors.outlineVariant,
-        },
-        {
-          padding: spacing.md,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          typography.bodyMd,
-          {
-            color: colors.onSurface,
-            flex: 1,
-            marginRight: 12,
-            lineHeight: 22,
-          },
-        ]}
-      >
-        {label}
-      </Text>
-
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{
-          true: '#5ED9D9',
-          false: colors.surfaceContainerLowest,
-        }}
-        thumbColor={
-          value ? '#0B1D1E' : '#EAEAEA'
-        }
       />
     </View>
   );

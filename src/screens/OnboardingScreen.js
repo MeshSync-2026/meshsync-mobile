@@ -50,7 +50,7 @@ export default function OnboardingScreen({ navigation }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(t('onboarding.locationRequired'), 'Location permission is required to receive nearby alerts.');
+        Alert.alert(t('onboarding.locationRequired'), t('onboarding.locationRequiredDesc'));
         setLocating(false);
         return;
       }

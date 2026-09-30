@@ -13,6 +13,40 @@ export class BleTransport extends MeshTransport {
     this.initialized = false;
   }
 
+  async _buildBlePayload(priorityEvents = []) {
+    const allEvents = await getStore().getAll();
+    const mergedMap = new Map();
+
+    if (Array.isArray(priorityEvents)) {
+      for (const evt of priorityEvents) {
+        if (evt && evt.id) mergedMap.set(evt.id, evt);
+      }
+    }
+    if (Array.isArray(allEvents)) {
+      for (const evt of allEvents) {
+        if (evt && evt.id && !mergedMap.has(evt.id)) {
+          mergedMap.set(evt.id, evt);
+        }
+      }
+    }
+
+    const sorted = Array.from(mergedMap.values())
+      .sort((a, b) => (b.created_at || b.createdAt || 0) - (a.created_at || a.createdAt || 0))
+      .slice(0, 10)
+      .map((evt) => {
+        const compact = {};
+        for (const [k, v] of Object.entries(evt)) {
+          if (v === null || v === undefined) continue;
+          if (k === "is_cloud_synced") continue;
+          if (k === "severity" && evt.severity_level != null) continue;
+          compact[k] = v;
+        }
+        return compact;
+      });
+
+    return JSON.stringify(sorted);
+  }
+
   async start() {
     if (this.isActive) return;
     this.isActive = true;
@@ -54,8 +88,8 @@ export class BleTransport extends MeshTransport {
                 this.emitEvents(newEvents);
 
                 // Refresh local GATT characteristic payload with newly ingested events
-                const allEvents = await store.getAll();
-                this.peerDiscovery.updateLocalPayload(JSON.stringify(allEvents), false);
+                const payloadStr = await this._buildBlePayload(newEvents);
+                this.peerDiscovery.updateLocalPayload(payloadStr, false);
               }
             }
           } catch (jsonErr) {
@@ -65,8 +99,8 @@ export class BleTransport extends MeshTransport {
       );
 
       // Load initial local events into GATT payload before advertising
-      const currentEvents = await getStore().getAll();
-      this.peerDiscovery.updateLocalPayload(JSON.stringify(currentEvents), false);
+      const initialPayload = await this._buildBlePayload();
+      this.peerDiscovery.localPayload = initialPayload;
 
       await this.peerDiscovery.start();
       this.initialized = true;
@@ -96,8 +130,7 @@ export class BleTransport extends MeshTransport {
 
     try {
       // Whenever local event log updates, refresh the BLE GATT payload and immediately push to discovered peers
-      const allEvents = await getStore().getAll();
-      const payloadStr = JSON.stringify(allEvents);
+      const payloadStr = await this._buildBlePayload(events);
       this.peerDiscovery.updateLocalPayload(payloadStr, true);
     } catch (err) {
       console.error("[BLE Transport] Error updating BLE payload:", err);

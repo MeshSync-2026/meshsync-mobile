@@ -180,9 +180,17 @@ export class PeerDiscoveryManager {
   updateLocalPayload(payloadString, triggerImmediate = false) {
     const changed = this.localPayload !== payloadString;
     this.localPayload = payloadString;
+
+    if (!this.active) {
+      this.start().catch((err) =>
+        console.warn("[PeerDiscovery] Deferred start failed:", err?.message || err)
+      );
+      return;
+    }
+
     this._syncLocalPayloadToGatt();
 
-    if ( (changed || triggerImmediate) && this.active && this.localPayload !== "[]") {
+    if ((changed || triggerImmediate) && this.active && this.localPayload !== "[]") {
       this.triggerImmediateSync();
     }
   }
@@ -210,33 +218,49 @@ export class PeerDiscoveryManager {
   }
 
   /**
-   * Build a compact JSON payload that fits in a single GATT characteristic read (<= 450 bytes),
-   * prioritizing the newest events first. Full event lists are also pushed via chunked GATT writes.
+   * Strip null/undefined and local-only fields so events fit cleanly inside BLE GATT read/write packets.
+   */
+  _compactEvent(evt) {
+    if (!evt || typeof evt !== "object") return evt;
+    const compact = {};
+    for (const [k, v] of Object.entries(evt)) {
+      if (v === null || v === undefined) continue;
+      if (k === "is_cloud_synced") continue;
+      if (k === "severity" && evt.severity_level != null) continue;
+      compact[k] = v;
+    }
+    return compact;
+  }
+
+  /**
+   * Build a compact JSON payload that fits in a single GATT characteristic read (<= 490 bytes),
+   * prioritizing the newest events first. Never returns "[]" if at least one event exists.
    */
   _buildReadCharacteristicPayload() {
     if (!this.localPayload || this.localPayload === "[]") {
       return "[]";
     }
-    if (Buffer.byteLength(this.localPayload, "utf-8") <= MAX_GATT_READ_BYTES) {
-      return this.localPayload;
-    }
     try {
       const parsed = JSON.parse(this.localPayload);
       if (!Array.isArray(parsed) || parsed.length === 0) return "[]";
-      const sorted = [...parsed].sort(
-        (a, b) => (b.created_at || b.createdAt || 0) - (a.created_at || a.createdAt || 0)
-      );
+      const sorted = [...parsed]
+        .sort((a, b) => (b.created_at || b.createdAt || 0) - (a.created_at || a.createdAt || 0))
+        .map((e) => this._compactEvent(e));
+
       const selected = [];
       for (const evt of sorted) {
         selected.push(evt);
         const candidate = JSON.stringify(selected);
-        if (Buffer.byteLength(candidate, "utf-8") > MAX_GATT_READ_BYTES) {
+        if (Buffer.byteLength(candidate, "utf-8") > MAX_GATT_READ_BYTES && selected.length > 1) {
           selected.pop();
           break;
         }
       }
       return JSON.stringify(selected);
     } catch (e) {
+      if (Buffer.byteLength(this.localPayload, "utf-8") <= MAX_GATT_READ_BYTES) {
+        return this.localPayload;
+      }
       return "[]";
     }
   }

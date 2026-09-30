@@ -95,8 +95,8 @@ export const getLastCloudSyncHlc = () => storage.getString("last_cloud_sync_hlc"
 export const setLastCloudSyncHlc = (hlc) => storage.set("last_cloud_sync_hlc", hlc);
 
 // One-time production cleanup flag to purge stale/mock events from local SQLite
-export const hasCompletedProdCleanup = () => storage.getBoolean("prod_db_cleaned_v1") ?? false;
-export const markProdCleanupComplete = () => storage.set("prod_db_cleaned_v1", true);
+export const hasCompletedProdCleanup = () => storage.getBoolean("prod_db_cleaned_v2") ?? false;
+export const markProdCleanupComplete = () => storage.set("prod_db_cleaned_v2", true);
 
 // Last My Status codes — carried into SOS events so severity is derivable
 export function setLastStatus({ safety, water, injury, people }) {

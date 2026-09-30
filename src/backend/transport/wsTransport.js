@@ -5,6 +5,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { MeshTransport } from "./meshTransport";
 import { getStore } from "../store/eventStore";
 import { getNodeId } from "../store/hotState";
+import { isMockCloudEvent } from "../cloudSync";
 
 export const DEFAULT_EDGE_SYNC_WS_URL =
   process.env.EXPO_PUBLIC_EDGE_SYNC_WS_URL || "wss://edge-sync.meshsync.org/ws";
@@ -106,7 +107,7 @@ export class WsTransport extends MeshTransport {
             const validIncoming = [];
 
             for (const evt of data.events || []) {
-              if (!evt || !evt.id) continue;
+              if (!evt || !evt.id || isMockCloudEvent(evt)) continue;
               const seen = await store.hasSeen(evt.origin_node_id, evt.seq);
               if (seen) continue;
 

@@ -41,6 +41,13 @@ class WebStorageMock {
       this.storage.removeItem(key);
     }
   }
+  clearAll() {
+    if (this.storage instanceof Map) {
+      this.storage.clear();
+    } else {
+      this.storage.clear();
+    }
+  }
 }
 
 // MMKV is a native module — unavailable in Expo Go. Guard BOTH the require
@@ -143,4 +150,14 @@ export function setActiveRole(role) {
   // Only the authorized responder role requires Command Center registration
   if (role === ROLE.RESPONDER && !isRegistered()) return;
   storage.set("active_role", role);
+}
+
+// Full reset — wipes all hot state and re-initializes (node_id regenerates, §7.2).
+export function resetAll() {
+  if (typeof storage.clearAll === "function") {
+    storage.clearAll();
+  } else {
+    for (const key of storage.getAllKeys ? storage.getAllKeys() : []) storage.delete(key);
+  }
+  initHotState();
 }

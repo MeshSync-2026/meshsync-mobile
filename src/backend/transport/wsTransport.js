@@ -81,6 +81,10 @@ export class WsTransport extends MeshTransport {
 
   _connect() {
     if (!this.started || this.connected) return;
+    // Guard against parallel connects: NetInfo + reconnect timers can fire
+    // while a handshake is still in-flight — without this each fire opened
+    // another socket (the 6× "Connected" logs) and leaked the extras.
+    if (this.ws && this.ws.readyState === 0) return;
     this._clearReconnectTimer();
 
     try {
@@ -213,8 +217,11 @@ export class WsTransport extends MeshTransport {
       this._safeSend({ type: "ping", timestamp: Date.now() });
 
       // Start watchdog timer: if no message received within timeout, drop connection
+      if (this.pingTimeoutTimer) clearTimeout(this.pingTimeoutTimer);
       this.pingTimeoutTimer = setTimeout(() => {
-        console.warn("[WS Transport] Heartbeat ping timed out. Dropping stale connection...");
+        // Expected when JS was paused (app idle/backgrounded) — the connection
+        // is still fine in most cases; a quiet close+reconnect recovers it.
+        console.log("[WS Transport] Heartbeat ping timed out — reconnecting...");
         if (this.ws) {
           try {
             this.ws.close();

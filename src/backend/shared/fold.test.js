@@ -227,6 +227,28 @@ describe("Fold — lwwFold", () => {
     const { responders } = lwwFold(events);
     assert.equal(responders.size, 2, "both responders preserved");
   });
+
+  test("orphan STATUS_UPDATE (no prior SOS, no severity) creates incident without throwing", () => {
+    // Regression: a My Status event carries no severity_level — the fold must
+    // not throw when the incident doesn't exist yet (MyStatusScreen path).
+    const events = [
+      makeEvent({
+        event_type_code: EVENT_TYPE.STATUS_UPDATE,
+        report_type_code: REPORT_TYPE.STATUS,
+        severity_level: undefined,
+        status_safety: 2,
+        status_water: 1,
+        status_injury: 0,
+        people_count: 3,
+      }),
+    ];
+    const { incidents } = lwwFold(events);
+    assert.equal(incidents.size, 1);
+    const inc = incidents.get("inc-0001");
+    assert.equal(inc.status_safety, 2);
+    assert.equal(inc.report_type_code, REPORT_TYPE.STATUS);
+    assert.equal(inc.severity_level, SEVERITY.MEDIUM);
+  });
 });
 
 describe("Fold — deriveConfidence", () => {

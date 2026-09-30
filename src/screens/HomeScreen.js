@@ -20,6 +20,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import { useMeshSync } from '../context/MeshSyncContext';
 import { getLastStatus } from '../backend/store/hotState';
@@ -64,6 +65,7 @@ export default function HomeScreen({ navigation }) {
   } = useMeshSync();
   const [isSending, setIsSending] = useState(false);
   const [alertBanner, setAlertBanner] = useState(null);
+  const insets = useSafeAreaInsets();
 
   // Pulse animation (civilian only)
   const pulseAnim1 = useRef(new Animated.Value(0)).current;
@@ -93,7 +95,9 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const activeIncidents = useMemo(
-    () => (incidents || []).filter((i) => i.status_code !== 5 && i.confidence_code !== 3 && i.confidence_code !== 4),
+    () => (incidents || []).filter(
+      (i) => i.report_type_code === 1 && i.status_code !== 5 && i.confidence_code !== 3 && i.confidence_code !== 4
+    ),
     [incidents]
   );
 
@@ -112,7 +116,10 @@ export default function HomeScreen({ navigation }) {
           onPress: async () => {
             try {
               const result = await cancelSOS();
-              if (result.success) Alert.alert('SOS Cancelled', 'Your emergency alert has been cancelled across the mesh.');
+              if (result.success) {
+                setAlertBanner(null);
+                Alert.alert('SOS Cancelled', 'Your emergency alert has been cancelled across the mesh.');
+              }
             } catch (e) {
               Alert.alert('Could not cancel', e.message || 'Please try again.');
             }
@@ -122,47 +129,29 @@ export default function HomeScreen({ navigation }) {
       return;
     }
 
-    Alert.alert(t('home.sosConfirm') || 'Send Emergency SOS?', t('home.sosConfirmDesc') || 'This will broadcast an urgent emergency alert with your GPS coordinates across nearby mesh devices.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Broadcast SOS',
-        style: 'destructive',
-        onPress: async () => {
-          Vibration.vibrate(300);
-          setIsSending(true);
-          try {
-            const result = await sendSOS();
-            if (result.success) {
-              Alert.alert(t('home.sosSent') || 'SOS Broadcasted', t('home.sosSentDesc') || 'Your emergency alert is active and being relayed across all nearby mesh nodes.');
-            } else if (result.error === 'no_sos_needed') {
-              Alert.alert(t('home.noSosNeeded') || 'No SOS needed', t('home.noSosNeededDesc') || 'Your last status says you are safe. Update your status if your situation changed.', [
-                { text: t('home.setMyStatus') || 'Update My Status', onPress: () => navigation.navigate('MyStatus') },
-                { text: 'Send anyway', style: 'destructive', onPress: sendSosForced },
-              ]);
-            } else {
-              Alert.alert('Could not send SOS', result.error || 'Please try again.');
-            }
-          } catch (e) {
-            Alert.alert('Could not send SOS', e.message || 'Please try again.');
-          } finally {
-            setIsSending(false);
-          }
-        },
-      },
-    ]);
-  };
-
-  const sendSosForced = async () => {
-    try {
-      const result = await sendSOS({ force: true });
-      if (result.success) {
-        Alert.alert(t('home.sosSent') || 'SOS Broadcasted', t('home.sosSentDesc') || 'Your emergency alert is active and being relayed across all nearby mesh nodes.');
-      } else {
-        Alert.alert('Could not send SOS', result.error || 'Please try again.');
-      }
-    } catch (e) {
-      Alert.alert('Could not send SOS', e.message || 'Please try again.');
-    }
+    // SOS always sends on press — an emergency button must never refuse.
+    // Saved My Status is attached; all-safe status sends as LOW severity.
+    Vibration.vibrate(500);
+    setIsSending(true);
+    sendSOS({ force: true })
+      .then((result) => {
+        console.log('[SOS] result:', JSON.stringify(result?.success ? { success: true, incident: result.event?.incident_id } : result));
+        if (result.success) {
+          setAlertBanner(t('home.sosActive') || 'SOS Active — broadcasting on mesh');
+          Alert.alert(t('home.sosSent') || 'SOS Broadcasted', t('home.sosSentDesc') || 'Your emergency alert is active and being relayed across all nearby mesh nodes.');
+        } else if (result.error === 'no_sos_needed') {
+          Alert.alert(t('home.noSosNeeded') || 'No SOS needed', t('home.noSosNeededDesc') || 'Your last status says you are safe. Update your status if your situation changed.', [
+            { text: t('home.setMyStatus') || 'Update My Status', onPress: () => navigation.navigate('MyStatus') },
+          ]);
+        } else {
+          Alert.alert('Could not send SOS', result.error || 'Please try again.');
+        }
+      })
+      .catch((e) => {
+        console.log('[SOS] failed:', e?.message || e);
+        Alert.alert('Could not send SOS', e.message || 'Please try again.');
+      })
+      .finally(() => setIsSending(false));
   };
 
   const handleQuickRespond = (incidentId) => {
@@ -209,7 +198,7 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         <TouchableOpacity
-          style={[styles.sosButton, { backgroundColor: activeSosIncidentId ? colors.status.warning : colors.status.critical }, shadows.sos]}
+          style={[styles.sosButton, { backgroundColor: activeSosIncidentId ? colors.status.warning : colors.status.critical }, shadows.sos, isSending && { opacity: 0.6 }]}
           onPress={handleSOS}
           disabled={isSending}
           activeOpacity={0.8}
@@ -391,20 +380,24 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg.primary }]}>
-      <View style={[styles.statusBar, { backgroundColor: colors.bg.primary, borderBottomColor: colors.border.subtle }]}>
+      <View style={[styles.statusBar, { backgroundColor: colors.bg.primary, borderBottomColor: colors.border.subtle, paddingTop: insets.top + 10 }]}>
         <View style={styles.statusLeft}>
-          <Ionicons name="hub" size={16} color={colors.accent.primary} />
+          <Ionicons name="git-network-outline" size={16} color={colors.accent.primary} />
           <Text style={[styles.statusText, { color: colors.text.primary }]}>
             {peerCount} {peerCount === 1 ? 'peer' : 'peers'}
           </Text>
         </View>
         <View style={styles.statusRight}>
-          <Ionicons name={isOnline ? 'cloud-online' : 'cloud-offline'} size={14} color={colors.text.tertiary} />
+          <Ionicons name={isOnline ? 'cloud' : 'cloud-offline'} size={14} color={colors.text.tertiary} />
           <Text style={[styles.statusSub, { color: colors.text.tertiary }]}>
             {isOnline ? t('common.online') || 'Online' : t('common.offline') || 'Offline'}
           </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Profile')} accessibilityLabel="Profile">
-            <Ionicons name="person-circle-outline" size={24} color={colors.text.primary} />
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Profile')}
+            accessibilityLabel="Profile"
+            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          >
+            <Ionicons name="person-circle-outline" size={26} color={colors.text.primary} />
           </TouchableOpacity>
         </View>
       </View>

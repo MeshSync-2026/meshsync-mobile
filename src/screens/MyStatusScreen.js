@@ -1,121 +1,223 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, Alert } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { useTheme } from '../theme/ThemeContext';
+// My Status Screen — ported from the New Test design (user-fixed version):
+// toggle-card UI, links the status update to the user's active SOS incident,
+// and persists status + landmark so the next SOS carries severity.
+
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  Vibration,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useApp } from '../context/AppContext';
 import { useMeshSync } from '../context/MeshSyncContext';
+import { getLastStatus, setLandmark, getLandmark } from '../backend/store/hotState';
 import { SAFETY, WATER, INJURY } from '../backend/shared/enums';
-import TopAppBar from '../components/TopAppBar';
-import PrimaryButton from '../components/PrimaryButton';
-import SegmentedGroup from '../components/SegmentedGroup';
-import Stepper from '../components/Stepper';
 
-const SAFETY_MAP = {
-  Safe: SAFETY.SAFE,
-  'Need Help': SAFETY.NEED_HELP,
-  Trapped: SAFETY.TRAPPED,
-};
 
-const WATER_MAP = {
-  Enough: WATER.GOOD,
-  Low: WATER.LOW,
-  None: WATER.NONE,
-};
+export default function MyStatusScreen({ navigation }) {
+  const { colors, spacing, radius, typography, shadows, t } = useApp();
+  const { updateMyStatus, incidents, nodeId } = useMeshSync();
 
-const MEDICAL_MAP = {
-  Uninjured: INJURY.NONE,
-  Minor: INJURY.MINOR,
-  Serious: INJURY.SEVERE,
-};
+  const [safety, setSafety] = useState(1);      // UI value 1-3 → event code = value-1
+  const [resources, setResources] = useState(1);
+  const [medical, setMedical] = useState(1);
+  const [peopleCount, setPeopleCount] = useState(1);
+  const [landmark, setLandmarkState] = useState('');
+  const [sending, setSending] = useState(false);
 
-export default function MyStatusScreen() {
-  const navigation = useNavigation();
-  const { colors, spacing, radius, typography } = useTheme();
-  const { updateMyStatus, userProfile } = useMeshSync();
+  // Load saved status + landmark on mount (persists across sessions)
+  useEffect(() => {
+    const saved = getLastStatus();
+    setSafety(saved.safety + 1);
+    setResources(saved.water + 1);
+    setMedical(saved.injury + 1);
+    setPeopleCount(saved.people || 1);
+    setLandmarkState(getLandmark() || '');
+  }, []);
 
-  const [safety, setSafety] = useState('Safe');
-  const [water, setWater] = useState('Enough');
-  const [food, setFood] = useState('Enough');
-  const [medical, setMedical] = useState('Uninjured');
-  const [people, setPeople] = useState(1);
-  const [locationTag, setLocationTag] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const SAFETY_OPTIONS = [
+    { code: SAFETY.SAFE, label: t('status.safe') || 'Safe', color: colors.status.success, icon: 'checkmark-circle' },
+    { code: SAFETY.NEED_HELP, label: t('status.needHelp') || 'Need Help', color: colors.status.critical, icon: 'help-circle' },
+    { code: SAFETY.TRAPPED, label: t('status.trapped') || 'Trapped', color: colors.status.critical, icon: 'warning' },
+  ];
 
-  const send = async () => {
-    setIsSubmitting(true);
+  const RESOURCE_OPTIONS = [
+    { code: WATER.GOOD, label: t('status.enough') || 'Enough', color: colors.status.success, icon: 'restaurant' },
+    { code: WATER.LOW, label: t('status.low') || 'Low', color: colors.status.warning, icon: 'restaurant-outline' },
+    { code: WATER.NONE, label: t('status.none') || 'None', color: colors.status.critical, icon: 'alert-circle' },
+  ];
+
+  const MEDICAL_OPTIONS = [
+    { code: INJURY.NONE, label: t('status.uninjured') || 'Uninjured', color: colors.status.success, icon: 'fitness' },
+    { code: INJURY.MINOR, label: t('status.minor') || 'Minor', color: colors.status.warning, icon: 'medkit-outline' },
+    { code: INJURY.SEVERE, label: t('status.serious') || 'Severe', color: colors.status.critical, icon: 'medkit' },
+  ];
+
+  const handleSendStatus = async () => {
+    if (sending) return;
+    setSending(true);
     try {
+      // Link to the user's active SOS incident (if any) so the status
+      // updates that incident instead of creating a new one
+      const activeSos = (incidents || []).find(
+        (i) =>
+          i.creator_node_id === nodeId &&
+          (i.confidence_code === 1 || i.confidence_code === 2) &&
+          i.report_type_code === 1
+      );
+
       const result = await updateMyStatus({
-        safetyCode: SAFETY_MAP[safety] ?? SAFETY.SAFE,
-        waterCode: WATER_MAP[water] ?? WATER.GOOD,
-        injuryCode: MEDICAL_MAP[medical] ?? INJURY.NONE,
-        peopleCount: people,
-        landmarkName: locationTag.trim() || undefined,
+        safetyCode: safety - 1,
+        waterCode: resources - 1,
+        injuryCode: medical - 1,
+        peopleCount,
+        landmarkName: landmark.trim() || undefined,
+        incidentId: activeSos?.id,
       });
+      console.log('[MyStatus] result:', JSON.stringify(result?.success ? { success: true, id: result.event?.id } : result));
 
       if (result.success) {
-        Alert.alert('Status sent', 'Your update will be transmitted to the nearest mesh node automatically.', [
+        setLandmark(landmark.trim()); // reuse for SOS landmark_name
+        Vibration.vibrate(200);
+        Alert.alert(t('status.statusSent') || 'Status sent', t('status.statusSentDesc') || 'Your update will be transmitted to the nearest mesh node automatically.', [
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to send status. Please try again.');
       }
+    } catch (e) {
+      console.error('[MyStatus] send failed:', e);
+      Alert.alert('Error', 'Failed to send status. Please try again.');
     } finally {
-      setIsSubmitting(false);
+      setSending(false);
     }
   };
 
+  const renderSection = (title, options, selected, onSelect, urgent) => (
+    <View>
+      <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>{title}</Text>
+      <View style={styles.optionsRow}>
+        {options.map((opt) => {
+          const isSelected = selected === opt.code;
+          return (
+            <TouchableOpacity
+              key={opt.label}
+              style={[
+                styles.optionCard,
+                { borderColor: colors.border.subtle },
+                isSelected
+                  ? { backgroundColor: opt.color, borderColor: opt.color }
+                  : { backgroundColor: colors.bg.secondary },
+              ]}
+              onPress={() => onSelect(opt.code)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={opt.icon}
+                size={20}
+                color={isSelected ? '#FFFFFF' : colors.text.secondary}
+              />
+              <Text
+                style={[
+                  styles.optionLabel,
+                  { color: isSelected ? '#FFFFFF' : colors.text.secondary },
+                ]}
+                numberOfLines={1}
+              >
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <TopAppBar title="My Status" />
+    <ScrollView style={[styles.container, { backgroundColor: colors.bg.primary }]} contentContainerStyle={{ paddingBottom: 48 }}>
+      <Text style={[styles.title, { color: colors.text.primary }]}>{t('status.title') || 'My Status'}</Text>
+      <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
+        {t('status.subtitle') || 'This is sent with your SOS so responders can prioritise you.'}
+      </Text>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.marginMobile, paddingTop: spacing.lg, paddingBottom: 48, gap: spacing.lg }}>
-        <View style={[styles.hero, { backgroundColor: colors.surfaceContainerHigh, borderRadius: radius.xl, padding: spacing.lg }]}>
-          <Text style={[typography.labelLg, { color: colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.6 }]}>Live Sync</Text>
-          <Text style={[typography.headlineLgMobile, { color: colors.onSurface, marginTop: 4 }]}>Update mesh data</Text>
-          <MaterialIcons name="podcasts" size={42} color={colors.onSurfaceVariant} style={{ position: 'absolute', right: 18, top: 24, opacity: 0.35 }} />
-        </View>
+      {renderSection(t('status.areYouSafe') || 'Are you safe?', SAFETY_OPTIONS, safety, setSafety, true)}
+      {renderSection(t('status.resources') || 'Food & Water', RESOURCE_OPTIONS, resources, setResources, false)}
+      {renderSection(t('incident.medical') || 'Medical', MEDICAL_OPTIONS, medical, setMedical, false)}
 
-        <SegmentedGroup icon="home" label="Are you safe?" options={['Safe', 'Need Help', 'Trapped']} value={safety} onChange={setSafety} />
-        <SegmentedGroup icon="water-drop" label="Water supply" options={['Enough', 'Low', 'None']} value={water} onChange={setWater} />
-        <SegmentedGroup icon="restaurant" label="Food supply" options={['Enough', 'Low', 'None']} value={food} onChange={setFood} />
-        <SegmentedGroup icon="medical-services" label="Medical status" options={['Uninjured', 'Minor', 'Serious']} value={medical} onChange={setMedical} />
+      {/* People */}
+      <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>{t('incident.people') || 'People with you'}</Text>
+      <View style={[styles.peopleCard, { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle }]}>
+        <TouchableOpacity
+          style={[styles.stepperBtn, { backgroundColor: colors.bg.tertiary, borderColor: colors.border.subtle }]}
+          onPress={() => setPeopleCount((p) => Math.max(1, p - 1))}
+        >
+          <Ionicons name="remove" size={20} color={colors.text.secondary} />
+        </TouchableOpacity>
+        <Text style={[styles.peopleCount, { color: colors.text.primary }]}>{peopleCount}</Text>
+        <TouchableOpacity
+          style={[styles.stepperBtn, { backgroundColor: colors.accent.primary }]}
+          onPress={() => setPeopleCount((p) => Math.min(99, p + 1))}
+        >
+          <Ionicons name="add" size={20} color={colors.accent.onPrimary} />
+        </TouchableOpacity>
+      </View>
 
-        <View style={[styles.peopleCard, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.xl, padding: spacing.md }]}>
-          <View>
-            <Text style={[typography.labelLg, { color: colors.onSurface }]}>People with you</Text>
-            <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Including yourself</Text>
-          </View>
-          <Stepper value={people} onChange={setPeople} />
-        </View>
+      {/* Landmark */}
+      <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>{t('onboarding.landmarkLabel') || 'Landmark'}</Text>
+      <TextInput
+        style={[styles.textInput, { backgroundColor: colors.bg.input, borderColor: colors.border.subtle, color: colors.text.primary }]}
+        value={landmark}
+        onChangeText={setLandmarkState}
+        placeholder={t('onboarding.landmarkPlaceholder') || 'e.g. Near the temple'}
+        placeholderTextColor={colors.text.tertiary}
+        autoCapitalize="words"
+      />
 
-        <View style={{ gap: spacing.xs }}>
-          <Text style={[typography.labelLg, { color: colors.onSurface }]}>Location / Landmark (Optional)</Text>
-          <TextInput
-            placeholder="e.g. Home, Room 102, 2nd Floor"
-            placeholderTextColor={colors.onSurfaceVariant + '80'}
-            value={locationTag}
-            onChangeText={setLocationTag}
-            style={[
-              styles.input,
-              {
-                borderColor: colors.outlineVariant,
-                backgroundColor: colors.surfaceContainerHigh,
-                borderRadius: radius.md,
-                color: colors.onSurface,
-              },
-            ]}
-          />
-        </View>
-
-        <PrimaryButton label="Send Status" icon="play-arrow" onPress={send} style={{ backgroundColor: colors.surfaceContainerHighest }} buttonColor="#FFFFFF" textColor="#111827" iconColor="#111827" />
-
-        <Text style={[typography.labelMd, { color: colors.onSurfaceVariant, textAlign: 'center', paddingHorizontal: spacing.xl, lineHeight: 18 }]}>Updates will be transmitted to the nearest mesh node automatically.</Text>
-      </ScrollView>
-    </SafeAreaView>
+      <TouchableOpacity
+        style={[styles.sendButton, { backgroundColor: colors.accent.primary }, shadows.card]}
+        onPress={handleSendStatus}
+        disabled={sending}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="send" size={18} color={colors.accent.onPrimary} />
+        <Text style={[styles.sendButtonText, { color: colors.accent.onPrimary }]}>
+          {sending ? t('common.sending') || 'Sending…' : t('status.sendStatus') || 'Send Status'}
+        </Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: { overflow: 'hidden', height: 96, justifyContent: 'center' },
-  peopleCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1 },
-  input: { borderWidth: 1, paddingHorizontal: 16, height: 48, fontSize: 16 },
+  container: { flex: 1 },
+  title: { fontSize: 24, fontWeight: '800', paddingHorizontal: 20, paddingTop: 48, paddingBottom: 4 },
+  subtitle: { fontSize: 14, paddingHorizontal: 20, marginBottom: 8 },
+  sectionLabel: { fontSize: 14, fontWeight: '700', paddingHorizontal: 20, marginBottom: 8, marginTop: 16 },
+  optionsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20 },
+  optionCard: {
+    flex: 1, borderWidth: 2, borderRadius: 12, paddingVertical: 12,
+    alignItems: 'center', gap: 4,
+  },
+  optionLabel: { fontSize: 12, fontWeight: '700' },
+  peopleCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 20, borderRadius: 16, borderWidth: 1, padding: 16,
+  },
+  stepperBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  peopleCount: { fontSize: 20, fontWeight: '800', minWidth: 44, textAlign: 'center' },
+  textInput: {
+    marginHorizontal: 20, borderWidth: 1, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14, fontSize: 16,
+  },
+  sendButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 16, paddingVertical: 16, gap: 8, marginHorizontal: 20, marginTop: 24,
+  },
+  sendButtonText: { fontWeight: '800', fontSize: 16 },
 });

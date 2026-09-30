@@ -39,6 +39,14 @@ import { getCurrentLocation, formatCoordinateLandmark } from "../utils/location"
 
 const MeshSyncContext = createContext(null);
 
+// Location must never block an emergency send — cap the GPS wait.
+const LOCATION_TIMEOUT_MS = 5000;
+const locationWithTimeout = (opts) =>
+  Promise.race([
+    getCurrentLocation(opts),
+    new Promise((resolve) => setTimeout(() => resolve(null), LOCATION_TIMEOUT_MS)),
+  ]);
+
 export function MeshSyncProvider({ children }) {
   const [incidents, setIncidents] = useState([]);
   const [responders, setResponders] = useState([]);
@@ -211,7 +219,7 @@ export function MeshSyncProvider({ children }) {
     if (severityLevel === 0) severityLevel = 1; // forced SOS defaults to LOW
 
     // GPS is best-effort: fall back to the last known location, then landmark/profile info
-    const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
+    const loc = (await locationWithTimeout({ showAlertOnDenied: false })) || userLocation;
     if (loc) {
       setUserLocation(loc);
     }
@@ -238,8 +246,8 @@ export function MeshSyncProvider({ children }) {
     });
 
     await store.insert(event);
+    setActiveSosState(event.incident_id); // flip UI to CANCEL immediately
     await broadcastEvent(event);
-    setActiveSosState(event.incident_id);
 
     return { success: true, event };
   }, [userLocation, userProfile, broadcastEvent]);
@@ -248,7 +256,7 @@ export function MeshSyncProvider({ children }) {
    * Report a Hazard (Captures GPS coordinates if available, otherwise falls back to landmark / title / profile landmark)
    */
   const reportHazard = useCallback(async ({ categoryCode, title, details, severityLevel, landmarkName }) => {
-    const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
+    const loc = (await locationWithTimeout({ showAlertOnDenied: false })) || userLocation;
     if (loc) {
       setUserLocation(loc);
     }
@@ -274,8 +282,8 @@ export function MeshSyncProvider({ children }) {
   /**
    * Submit Life Safety / Need Help status update
    */
-  const updateMyStatus = useCallback(async ({ safetyCode, waterCode, injuryCode, peopleCount, landmarkName }) => {
-    const loc = (await getCurrentLocation({ showAlertOnDenied: false })) || userLocation;
+  const updateMyStatus = useCallback(async ({ safetyCode, waterCode, injuryCode, peopleCount, landmarkName, incidentId }) => {
+    const loc = (await locationWithTimeout({ showAlertOnDenied: false })) || userLocation;
     if (loc) {
       setUserLocation(loc);
     }
@@ -283,6 +291,7 @@ export function MeshSyncProvider({ children }) {
 
     const store = getStore();
     const event = createStatusEvent({
+      incidentId,
       safety_code: safetyCode,
       water_code: waterCode,
       injury_code: injuryCode,

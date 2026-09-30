@@ -120,17 +120,17 @@ export default function MyActivityScreen() {
           <Text style={[typography.labelLg, { color: colors.onSurface, textTransform: 'uppercase', marginBottom: spacing.md }]}>Mesh Sync Stats</Text>
           <View style={[styles.statsCard, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.outlineVariant, borderRadius: radius.xl }]}>
             <View style={styles.statsRow}>
-              <View>
-                <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{myEvents.length}</Text>
-                <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>My Transmitted Events</Text>
+              <View style={styles.statCol}>
+                <Text style={[typography.headlineMd, { color: colors.onSurface }]}>{myEvents.length}</Text>
+                <Text style={[typography.labelMd, styles.statLabel, { color: colors.onSurfaceVariant }]}>My Transmitted Events</Text>
               </View>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={[typography.headlineLgMobile, { color: colors.onSurface }]}>{relayedCount ?? 0}</Text>
-                <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Relayed for Peers</Text>
+              <View style={styles.statCol}>
+                <Text style={[typography.headlineMd, { color: colors.onSurface }]}>{relayedCount ?? 0}</Text>
+                <Text style={[typography.labelMd, styles.statLabel, { color: colors.onSurfaceVariant }]}>Relayed for Peers</Text>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[typography.labelLg, { color: colors.onSurface }]}>{peerCount} Nodes</Text>
-                <Text style={[typography.labelMd, { color: colors.onSurfaceVariant }]}>Direct BLE Peers</Text>
+              <View style={styles.statCol}>
+                <Text style={[typography.headlineMd, { color: colors.onSurface }]}>{peerCount}</Text>
+                <Text style={[typography.labelMd, styles.statLabel, { color: colors.onSurfaceVariant }]}>Direct Peers</Text>
               </View>
             </View>
           </View>
@@ -159,7 +159,9 @@ const styles = StyleSheet.create({
   divider: { width: 1, height: 16 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 16, borderWidth: 1 },
   itemIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  statsCard: { height: 120, borderWidth: 1, justifyContent: 'center', padding: 18 },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statsCard: { borderWidth: 1, paddingVertical: 18, paddingHorizontal: 12 },
+  statsRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  statCol: { flex: 1, alignItems: 'center', gap: 2 },
+  statLabel: { textAlign: 'center' },
   emptyCard: { borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 });

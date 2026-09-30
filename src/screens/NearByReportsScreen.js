@@ -7,13 +7,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
 } from 'react-native';
 import Svg, { Circle, Line, G, Path, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { useApp } from '../context/AppContext';
 import { useMeshSync } from '../context/MeshSyncContext';
@@ -66,8 +67,12 @@ function formatDistance(meters) {
 }
 
 function formatTimeAgo(timestamp) {
-  if (!timestamp) return '—';
-  const diff = Date.now() - timestamp;
+  // events can arrive with created_at as ISO string (cloud) or null —
+  // coerce and bail out instead of rendering "NaNd ago"
+  const t = typeof timestamp === 'number' ? timestamp : Date.parse(timestamp);
+  if (!t || isNaN(t)) return '—';
+  const diff = Date.now() - t;
+  if (diff < 0 || isNaN(diff)) return '—';
   const seconds = Math.floor(diff / 1000);
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
@@ -105,8 +110,106 @@ function getPinColor(incident, colors) {
 function getIncidentTitle(incident) {
   if (incident.report_type_code === 1) return 'SOS - Need Help';
   const catLabel = CATEGORY_LABEL[incident.category_code] || 'Hazard';
-  return `${catLabel} Hazard`;
+  // avoid "Hazard Hazard" when the category is unknown/missing
+  return catLabel === 'Hazard' ? 'Hazard' : `${catLabel} Hazard`;
 }
+
+// Radar — isolated so the 20fps sweep + compass heading only re-render
+// this small SVG subtree, never the whole screen. Runs ONLY while the tab
+// is focused — React Navigation keeps visited tabs mounted, so without
+// useIsFocused the 50ms timer + compass watch burned the JS thread forever
+// and made the whole app sluggish after visiting Nearby once.
+const Radar = React.memo(function Radar({ incidents, myLat, myLng, colors, size }) {
+  const isFocused = useIsFocused();
+  const [sweepAngle, setSweepAngle] = useState(0);
+  const [heading, setHeading] = useState(0);
+  const center = size / 2;
+  const radius = center - 15;
+
+  useEffect(() => {
+    if (!isFocused) return;
+    let sub = null;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          sub = await Location.watchHeadingAsync((h) => {
+            const v = typeof h.trueHeading === 'number' ? h.trueHeading : h.magHeading || 0;
+            // magnetometer drifts ±2-3° even on a desk — only re-render on >=5°
+            setHeading((prev) => (Math.abs(v - prev) >= 5 ? v : prev));
+          });
+        }
+      } catch {}
+    })();
+    return () => { if (sub && sub.remove) sub.remove(); };
+  }, [isFocused]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const timer = setInterval(() => setSweepAngle((a) => (a + 6) % 360), 50);
+    return () => clearInterval(timer);
+  }, [isFocused]);
+
+  const projectToRadar = (incident) => {
+    const lat = myLat ?? 6.9271;
+    const lng = myLng ?? 79.8612;
+    const dist = calcDistance(lat, lng, incident.latitude, incident.longitude);
+    const bearing = calcBearing(lat, lng, incident.latitude, incident.longitude);
+    const scaledDist = Math.min(dist / MAX_RANGE_METERS, 1) * radius;
+    const angleRad = (bearing * Math.PI) / 180;
+    return {
+      x: center + scaledDist * Math.sin(angleRad),
+      y: center - scaledDist * Math.cos(angleRad),
+      distance: dist,
+    };
+  };
+
+  return (
+    <Svg width={size} height={size}>
+      <Circle cx={center} cy={center} r={radius} fill={colors.radar.bg} />
+
+      <G rotation={-heading} origin={`${center}, ${center}`}>
+        <Circle cx={center} cy={center} r={radius * 0.33} fill="none" stroke={colors.radar.ringNear} strokeWidth={1} />
+        <Circle cx={center} cy={center} r={radius * 0.66} fill="none" stroke={colors.radar.ringMid} strokeWidth={1} />
+        <Circle cx={center} cy={center} r={radius} fill="none" stroke={colors.radar.ringMid} strokeWidth={1} />
+
+        <Line x1={center} y1={center - radius} x2={center} y2={center + radius} stroke={colors.radar.grid} strokeWidth={1} />
+        <Line x1={center - radius} y1={center} x2={center + radius} y2={center} stroke={colors.radar.grid} strokeWidth={1} />
+
+        <SvgText x={center} y={12} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">N</SvgText>
+        <SvgText x={center} y={size - 4} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">S</SvgText>
+        <SvgText x={8} y={center + 3} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">W</SvgText>
+        <SvgText x={size - 8} y={center + 3} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">E</SvgText>
+
+        {incidents.map((inc, idx) => {
+          const pos = projectToRadar(inc);
+          const pinColor = getPinColor(inc, colors);
+          return (
+            <G key={inc.id || idx}>
+              <Circle cx={pos.x} cy={pos.y} r={5} fill={pinColor} />
+              <Circle cx={pos.x} cy={pos.y} r={8} fill="none" stroke={pinColor} strokeWidth={1} opacity={0.4} />
+              <SvgText x={pos.x} y={pos.y + 18} fontSize={7} fill={colors.text.tertiary} textAnchor="middle">
+                {formatDistance(pos.distance)}
+              </SvgText>
+            </G>
+          );
+        })}
+      </G>
+
+      <G rotation={sweepAngle} origin={`${center}, ${center}`}>
+        <Line x1={center} y1={center} x2={center} y2={center - radius} stroke={colors.radar.sweep} strokeWidth={2} />
+        <Path
+          d={`M ${center} ${center} L ${center} ${center - radius} A ${radius} ${radius} 0 0 1 ${center + 12} ${center - radius + 3} Z`}
+          fill={colors.radar.sweep}
+          opacity={0.3}
+        />
+      </G>
+
+      <Circle cx={center} cy={center} r={5} fill={colors.radar.pinSelf} />
+      <Circle cx={center} cy={center} r={9} fill="none" stroke={colors.radar.pinSelf} strokeWidth={1.5} opacity={0.5} />
+    </Svg>
+  );
+});
 
 export default function NearbyScreen({ navigation }) {
   const { colors, spacing, t, isResponder } = useApp();
@@ -114,39 +217,17 @@ export default function NearbyScreen({ navigation }) {
 
   const [location, setLocation] = useState(userLocation || null);
   const [refreshing, setRefreshing] = useState(false);
-  const [sweepAngle, setSweepAngle] = useState(0);
-  const [heading, setHeading] = useState(0);
   const [filter, setFilter] = useState('all'); // all | sos | hazard | resolved
   const [radarZoomed, setRadarZoomed] = useState(false);
 
   const RADAR_SIZE = radarZoomed && isResponder ? RADAR_SIZE_RESPONDER : RADAR_SIZE_DEFAULT;
-  const RADAR_CENTER = RADAR_SIZE / 2;
-  const RADAR_RADIUS = RADAR_CENTER - 15;
 
-  // Location + compass heading
+  // Location only — compass heading lives inside <Radar/> now
   useEffect(() => {
-    let headingSub = null;
     (async () => {
       const loc = await getCurrentLocation({ showAlertOnDenied: false });
       if (loc) setLocation(loc);
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          headingSub = await Location.watchHeadingAsync((h) => {
-            setHeading(typeof h.trueHeading === 'number' ? h.trueHeading : h.magHeading || 0);
-          });
-        }
-      } catch {}
     })();
-    return () => {
-      if (headingSub && headingSub.remove) headingSub.remove();
-    };
-  }, []);
-
-  // Radar sweep animation
-  useEffect(() => {
-    const timer = setInterval(() => setSweepAngle((a) => (a + 6) % 360), 50);
-    return () => clearInterval(timer);
   }, []);
 
   const withDistance = useMemo(
@@ -193,27 +274,30 @@ export default function NearbyScreen({ navigation }) {
     [withDistance]
   );
 
+  // Flatten sections into one list for FlatList virtualization —
+  // ScrollView mounted every card at once, which stalled tab switches.
+  const listData = useMemo(() => {
+    const items = [];
+    if (urgentRequests.length > 0 && (filter === 'all' || filter === 'sos')) {
+      items.push({ kind: 'header', key: 'h-urgent', icon: 'alert-circle', iconColor: colors.status.critical, title: t('nearby.urgentRequests'), count: urgentRequests.length });
+      for (const i of urgentRequests) items.push({ kind: 'card', key: `u-${i.id}`, item: i, urgent: true });
+    }
+    if (communityReports.length > 0 && (filter === 'all' || filter === 'hazard')) {
+      items.push({ kind: 'header', key: 'h-community', icon: 'people-circle-outline', iconColor: colors.status.warning, title: t('nearby.communityReports'), count: communityReports.length });
+      for (const i of communityReports) items.push({ kind: 'card', key: `c-${i.id}`, item: i });
+    }
+    if (recentlyResolved.length > 0 && (filter === 'all' || filter === 'resolved')) {
+      items.push({ kind: 'header', key: 'h-resolved', icon: 'checkmark-circle-outline', iconColor: colors.status.success, title: t('nearby.recentlyResolved'), count: recentlyResolved.length });
+      for (const i of recentlyResolved) items.push({ kind: 'card', key: `r-${i.id}`, item: i, resolved: true });
+    }
+    return items;
+  }, [urgentRequests, communityReports, recentlyResolved, filter, colors, t]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     const loc = await getCurrentLocation({ showAlertOnDenied: false });
     if (loc) setLocation(loc);
     setRefreshing(false);
-  };
-
-  // Project an incident onto the radar plane
-  const projectToRadar = (incident) => {
-    const myLat = location?.latitude || 6.9271;
-    const myLng = location?.longitude || 79.8612;
-    const dist = calcDistance(myLat, myLng, incident.latitude, incident.longitude);
-    const bearing = calcBearing(myLat, myLng, incident.latitude, incident.longitude);
-    const scaledDist = Math.min(dist / MAX_RANGE_METERS, 1) * RADAR_RADIUS;
-    const angleRad = (bearing * Math.PI) / 180;
-    return {
-      x: RADAR_CENTER + scaledDist * Math.sin(angleRad),
-      y: RADAR_CENTER - scaledDist * Math.cos(angleRad),
-      distance: dist,
-      bearing,
-    };
   };
 
   const handleCardPress = (item) => {
@@ -326,15 +410,27 @@ export default function NearbyScreen({ navigation }) {
     );
   };
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.bg.primary }]}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Radar section */}
-        <View style={styles.radarSection}>
+  const renderListItem = ({ item }) => {
+    if (item.kind === 'header') {
+      return (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderLeft}>
+              <Ionicons name={item.icon} size={18} color={item.iconColor} />
+              <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>{item.title}</Text>
+            </View>
+            <Text style={[styles.sectionCount, { color: colors.text.tertiary }]}>{item.count}</Text>
+          </View>
+        </View>
+      );
+    }
+    return <View style={styles.cardRow}>{renderCard(item.item, item.urgent, item.resolved)}</View>;
+  };
+
+  const listHeader = (
+    <>
+      {/* Radar section */}
+      <View style={styles.radarSection}>
           <View style={styles.radarHeader}>
             {isResponder && (
               <TouchableOpacity
@@ -347,49 +443,13 @@ export default function NearbyScreen({ navigation }) {
           </View>
 
           <View style={styles.radarContainer}>
-            <Svg width={RADAR_SIZE} height={RADAR_SIZE}>
-              <Circle cx={RADAR_CENTER} cy={RADAR_CENTER} r={RADAR_RADIUS} fill={colors.radar.bg} />
-
-              <G rotation={-heading} origin={`${RADAR_CENTER}, ${RADAR_CENTER}`}>
-                <Circle cx={RADAR_CENTER} cy={RADAR_CENTER} r={RADAR_RADIUS * 0.33} fill="none" stroke={colors.radar.ringNear} strokeWidth={1} />
-                <Circle cx={RADAR_CENTER} cy={RADAR_CENTER} r={RADAR_RADIUS * 0.66} fill="none" stroke={colors.radar.ringMid} strokeWidth={1} />
-                <Circle cx={RADAR_CENTER} cy={RADAR_CENTER} r={RADAR_RADIUS} fill="none" stroke={colors.radar.ringMid} strokeWidth={1} />
-
-                <Line x1={RADAR_CENTER} y1={RADAR_CENTER - RADAR_RADIUS} x2={RADAR_CENTER} y2={RADAR_CENTER + RADAR_RADIUS} stroke={colors.radar.grid} strokeWidth={1} />
-                <Line x1={RADAR_CENTER - RADAR_RADIUS} y1={RADAR_CENTER} x2={RADAR_CENTER + RADAR_RADIUS} y2={RADAR_CENTER} stroke={colors.radar.grid} strokeWidth={1} />
-
-                <SvgText x={RADAR_CENTER} y={12} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">N</SvgText>
-                <SvgText x={RADAR_CENTER} y={RADAR_SIZE - 4} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">S</SvgText>
-                <SvgText x={8} y={RADAR_CENTER + 3} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">W</SvgText>
-                <SvgText x={RADAR_SIZE - 8} y={RADAR_CENTER + 3} fontSize={10} fontWeight="700" fill={colors.text.tertiary} textAnchor="middle">E</SvgText>
-
-                {radarIncidents.map((inc, idx) => {
-                  const pos = projectToRadar(inc);
-                  const pinColor = getPinColor(inc, colors);
-                  return (
-                    <G key={inc.id || idx}>
-                      <Circle cx={pos.x} cy={pos.y} r={5} fill={pinColor} />
-                      <Circle cx={pos.x} cy={pos.y} r={8} fill="none" stroke={pinColor} strokeWidth={1} opacity={0.4} />
-                      <SvgText x={pos.x} y={pos.y + 18} fontSize={7} fill={colors.text.tertiary} textAnchor="middle">
-                        {formatDistance(pos.distance)}
-                      </SvgText>
-                    </G>
-                  );
-                })}
-              </G>
-
-              <G rotation={sweepAngle} origin={`${RADAR_CENTER}, ${RADAR_CENTER}`}>
-                <Line x1={RADAR_CENTER} y1={RADAR_CENTER} x2={RADAR_CENTER} y2={RADAR_CENTER - RADAR_RADIUS} stroke={colors.radar.sweep} strokeWidth={2} />
-                <Path
-                  d={`M ${RADAR_CENTER} ${RADAR_CENTER} L ${RADAR_CENTER} ${RADAR_CENTER - RADAR_RADIUS} A ${RADAR_RADIUS} ${RADAR_RADIUS} 0 0 1 ${RADAR_CENTER + 12} ${RADAR_CENTER - RADAR_RADIUS + 3} Z`}
-                  fill={colors.radar.sweep}
-                  opacity={0.3}
-                />
-              </G>
-
-              <Circle cx={RADAR_CENTER} cy={RADAR_CENTER} r={5} fill={colors.radar.pinSelf} />
-              <Circle cx={RADAR_CENTER} cy={RADAR_CENTER} r={9} fill="none" stroke={colors.radar.pinSelf} strokeWidth={1.5} opacity={0.5} />
-            </Svg>
+            <Radar
+              incidents={radarIncidents}
+              myLat={location?.latitude}
+              myLng={location?.longitude}
+              colors={colors}
+              size={RADAR_SIZE}
+            />
           </View>
 
           {/* Legend */}
@@ -438,59 +498,33 @@ export default function NearbyScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Urgent Requests */}
-        {urgentRequests.length > 0 && (filter === 'all' || filter === 'sos') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionHeaderLeft}>
-                <Ionicons name="alert-circle" size={18} color={colors.status.critical} />
-                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>{t('nearby.urgentRequests')}</Text>
-              </View>
-              <Text style={[styles.sectionCount, { color: colors.text.tertiary }]}>{urgentRequests.length}</Text>
+    </>
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.bg.primary }]}>
+      <FlatList
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        data={listData}
+        keyExtractor={(item) => item.key}
+        renderItem={renderListItem}
+        ListHeaderComponent={listHeader}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        ListEmptyComponent={
+          (contextIncidents || []).length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="navigate-outline" size={48} color={colors.text.tertiary} />
+              <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>{t('nearby.noIncidents')}</Text>
+              <Text style={[styles.emptySubtext, { color: colors.text.tertiary }]}>{t('nearby.noIncidentsDesc')}</Text>
             </View>
-            {urgentRequests.map((item) => renderCard(item, true, false))}
-          </View>
-        )}
-
-        {/* Community Reports */}
-        {communityReports.length > 0 && (filter === 'all' || filter === 'hazard') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionHeaderLeft}>
-                <Ionicons name="people-circle-outline" size={18} color={colors.status.warning} />
-                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>{t('nearby.communityReports')}</Text>
-              </View>
-              <Text style={[styles.sectionCount, { color: colors.text.tertiary }]}>{communityReports.length}</Text>
-            </View>
-            {communityReports.map((item) => renderCard(item, false, false))}
-          </View>
-        )}
-
-        {/* Recently Resolved */}
-        {recentlyResolved.length > 0 && (filter === 'all' || filter === 'resolved') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionHeaderLeft}>
-                <Ionicons name="checkmark-circle-outline" size={18} color={colors.status.success} />
-                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>{t('nearby.recentlyResolved')}</Text>
-              </View>
-              <Text style={[styles.sectionCount, { color: colors.text.tertiary }]}>{recentlyResolved.length}</Text>
-            </View>
-            {recentlyResolved.map((item) => renderCard(item, false, true))}
-          </View>
-        )}
-
-        {/* Empty state */}
-        {(contextIncidents || []).length === 0 && (
-          <View style={styles.emptyState}>
-            <Ionicons name="navigate-outline" size={48} color={colors.text.tertiary} />
-            <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>{t('nearby.noIncidents')}</Text>
-            <Text style={[styles.emptySubtext, { color: colors.text.tertiary }]}>{t('nearby.noIncidentsDesc')}</Text>
-          </View>
-        )}
-
-        <View style={{ height: spacing.xl }} />
-      </ScrollView>
+          ) : null
+        }
+        ListFooterComponent={<View style={{ height: spacing.xl }} />}
+      />
     </View>
   );
 }
@@ -517,6 +551,7 @@ const styles = StyleSheet.create({
   },
   filterText: { fontSize: 11, fontWeight: '600' },
   section: { paddingHorizontal: 20, marginTop: 16 },
+  cardRow: { paddingHorizontal: 20 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },

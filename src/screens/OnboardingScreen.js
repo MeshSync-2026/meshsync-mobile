@@ -18,14 +18,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useApp } from '../context/AppContext';
+import { useMeshSync } from '../context/MeshSyncContext';
 import { LANGS } from '../i18n/translations';
-import { setLandmark, setActiveRole, ROLE } from '../backend/store/hotState';
+import { setLandmark, ROLE } from '../backend/store/hotState';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PROFILE_STORAGE_KEY = '@meshsync_profile';
 
 export default function OnboardingScreen({ navigation }) {
   const { colors, spacing, t, lang, setLang } = useApp();
+  const { switchRole } = useMeshSync();
   const [step, setStep] = useState('lang');
   const [location, setLocation] = useState(null);
   const [landmark, setLandmarkText] = useState('');
@@ -75,7 +77,7 @@ export default function OnboardingScreen({ navigation }) {
   };
 
   const finishOnboarding = (role) => {
-    setActiveRole(role);
+    switchRole(role); // updates context state + persists
     const profile = {
       name: landmark.trim() || 'MeshSync User',
       fullName: landmark.trim() || 'MeshSync User',

@@ -18,7 +18,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useMeshSync } from '../context/MeshSyncContext';
 import { useApp } from '../context/AppContext';
 import { LANGS } from '../i18n/translations';
-import { ROLE } from '../backend/store/hotState';
+import { ROLE, resetAll } from '../backend/store/hotState';
 import TopAppBar from '../components/TopAppBar';
 import { profile as mockProfile } from '../data/mockData';
 
@@ -34,7 +34,7 @@ export default function ProfileScreen({ navigation }) {
     toggleScheme,
   } = useTheme();
 
-  const { nodeId, isRegistered, activeRole, myEvents, relayedCount } = useMeshSync();
+  const { nodeId, isRegistered, activeRole, myEvents, relayedCount, switchRole } = useMeshSync();
   const { lang, setLang } = useApp();
   const [profile, setProfile] = useState(null);
   const [relayAuto, setRelayAuto] = useState(true);
@@ -83,7 +83,7 @@ export default function ProfileScreen({ navigation }) {
   const resetAppData = () => {
     Alert.alert(
       'Reset App Data',
-      'This will erase all local data on this device.',
+      'This will erase all local data on this device and return to onboarding.',
       [
         {
           text: 'Cancel',
@@ -95,10 +95,12 @@ export default function ProfileScreen({ navigation }) {
           onPress: async () => {
             try {
               await AsyncStorage.removeItem(PROFILE_STORAGE_KEY);
+              await AsyncStorage.removeItem('@meshsync_responder_session');
+              resetAll(); // clears role, registration, node_id, saved status/landmark
 
               Alert.alert(
                 'Data Reset',
-                'Your local profile has been removed.'
+                'All local data cleared. You can choose a role again.'
               );
 
               navigation.replace('Onboarding');
@@ -115,6 +117,25 @@ export default function ProfileScreen({ navigation }) {
       ]
     );
   };
+
+  const handleSwitchRole = () => {
+    const next = activeRole === ROLE.CIVILIAN ? ROLE.CIVILIAN_RESPONDER : ROLE.CIVILIAN;
+    switchRole(next);
+    Alert.alert(
+      next === ROLE.CIVILIAN_RESPONDER ? 'Responder Mode' : 'Civilian Mode',
+      next === ROLE.CIVILIAN_RESPONDER
+        ? 'You now see nearby incidents and can respond to them.'
+        : 'You are back in civilian mode. The SOS button is available.'
+    );
+  };
+
+  const isCivilianRole = activeRole === ROLE.CIVILIAN;
+  const isCivResponder = activeRole === ROLE.CIVILIAN_RESPONDER;
+  const roleLabel = isRegistered
+    ? 'Authorized Responder'
+    : isCivResponder
+    ? 'Civilian Responder'
+    : 'Civilian';
 
   // Avoid rendering profile fields before AsyncStorage finishes.
   if (!profile) {
@@ -191,12 +212,12 @@ export default function ProfileScreen({ navigation }) {
         {/* LANGUAGE */}
         <View
           style={[
-            styles.summary,
             {
               backgroundColor: colors.surfaceContainerHigh,
               borderColor: colors.outlineVariant,
               borderRadius: radius.xl,
               padding: spacing.md,
+              borderWidth: 1,
             },
           ]}
         >
@@ -285,6 +306,81 @@ export default function ProfileScreen({ navigation }) {
             />
           </TouchableOpacity>
         </View>
+
+        {/* ROLE SWITCH — Civilian ↔ Civilian Responder (authorized users see their badge only) */}
+        {!isRegistered && (
+          <View
+            style={[
+              styles.responderCard,
+              {
+                backgroundColor: colors.surfaceContainer,
+                borderColor: colors.outlineVariant,
+                borderRadius: radius.xl,
+                padding: spacing.md,
+              },
+            ]}
+          >
+            <View style={styles.rowGap}>
+              <MaterialIcons
+                name={isCivilianRole ? 'person' : 'pan-tool'}
+                size={20}
+                color={colors.primary}
+              />
+
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    typography.labelLg,
+                    { color: colors.onSurface },
+                  ]}
+                >
+                  Role: {roleLabel}
+                </Text>
+
+                <Text
+                  style={[
+                    typography.bodyMd,
+                    {
+                      color: colors.onSurfaceVariant,
+                      marginTop: 4,
+                    },
+                  ]}
+                >
+                  {isCivilianRole
+                    ? 'SOS button active. Switch to respond to nearby incidents instead.'
+                    : 'Viewing nearby incidents with Help Now. Switch back to send SOS.'}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[
+                styles.responderButton,
+                {
+                  backgroundColor: colors.primary,
+                  borderRadius: radius.md,
+                },
+              ]}
+              onPress={handleSwitchRole}
+            >
+              <Text
+                style={[
+                  typography.labelLg,
+                  { color: colors.onPrimary },
+                ]}
+              >
+                {isCivilianRole ? 'Switch to Civilian Responder' : 'Switch to Civilian'}
+              </Text>
+
+              <MaterialIcons
+                name="swap-horiz"
+                size={18}
+                color={colors.onPrimary}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* RESPONDER */}
         <View

@@ -57,15 +57,29 @@ class MemoryEventStore {
     return () => this.listeners.delete(fn);
   }
 
-  async _notify() {
-    const projection = await this.getProjection();
-    this.listeners.forEach((fn) => {
-      try {
-        fn(projection);
-      } catch (err) {
-        console.error("Error in memoryStore subscription listener:", err);
-      }
+  // Trailing debounce — a burst of inserts (e.g. WS reconnect pushing the
+  // backlog) coalesces into ONE fold + listener pass instead of N folds,
+  // each O(all events), which previously stalled the JS thread.
+  _notify() {
+    if (this._notifyPending) return this._notifyPending;
+    this._notifyPending = new Promise((resolve) => {
+      setTimeout(async () => {
+        this._notifyPending = null;
+        try {
+          const projection = await this.getProjection();
+          this.listeners.forEach((fn) => {
+            try {
+              fn(projection);
+            } catch (err) {
+              console.error("Error in memoryStore subscription listener:", err);
+            }
+          });
+        } finally {
+          resolve();
+        }
+      }, 50);
     });
+    return this._notifyPending;
   }
 }
 

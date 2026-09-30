@@ -26,6 +26,7 @@ export const translations = {
     "common.peersNearby": "peers nearby",
     "common.syncedAgo": "synced {time}",
     "common.justNow": "just now",
+    "common.sending": "Sending…",
 
     // Home screen
     "home.title": "Home",
@@ -42,6 +43,7 @@ export const translations = {
     "home.cancelSos": "Cancel SOS",
     "home.cancelSosConfirm": "Are you sure you want to cancel your distress signal?",
     "home.yesCancel": "Yes, Cancel",
+    "home.keepSos": "Keep SOS",
     "home.reportHazard": "Report Hazard",
     "home.reportHazardDesc": "Flood, fire, or blocked roads",
     "home.myStatus": "My Status",
@@ -99,6 +101,8 @@ export const translations = {
 
     // My Status screen
     "status.title": "My Status",
+    "status.subtitle": "This is sent with your SOS so responders can prioritise you.",
+    "status.areYouSafe": "Are you safe?",
     "status.safety": "Safety Status",
     "status.safe": "Safe",
     "status.needHelp": "Need Help",
@@ -121,6 +125,7 @@ export const translations = {
 
     // Report Hazard screen
     "hazard.title": "Report Hazard",
+    "hazard.subtitle": "Report a hazard you've spotted nearby.",
     "hazard.offlineMesh": "Offline — Mesh Active",
     "hazard.category": "Select Category",
     "hazard.flood": "Flood",
@@ -291,6 +296,7 @@ export const translations = {
     "common.peersNearby": "අසල සකජන",
     "common.syncedAgo": "{time} කට පෙර සමමුහූර්තයි",
     "common.justNow": "දැන්",
+    "common.sending": "යවමින්…",
 
     "home.title": "මුල් පිටුව",
     "home.emergencyHelp": "අතිශය උපකාර",
@@ -306,6 +312,7 @@ export const translations = {
     "home.cancelSos": "SOS අවලංගු කරන්න",
     "home.cancelSosConfirm": "ඔබගේ අනතුරු සංඥාව අවලංගු කිරීමට ඔබ වග ද?",
     "home.yesCancel": "ඔව්, අවලංගු කරන්න",
+    "home.keepSos": "SOS තබන්න",
     "home.reportHazard": "අනතුරක් වාර්තා කරන්න",
     "home.reportHazardDesc": "ගංවතුර, ගිනි හෝ වැසුණු මාර්ග",
     "home.myStatus": "මගේ තත්ත්වය",
@@ -359,6 +366,8 @@ export const translations = {
     "activity.sosCancelled": "SOS අවලංගුයි",
 
     "status.title": "මගේ තත්ත්වය",
+    "status.subtitle": "මෙය ඔබේ SOS සමඟ යැවේ — ප්‍රතිචාරකයන්ට ඔබට ප්‍රමුඛතා දීමට.",
+    "status.areYouSafe": "ඔබ ආරක්ෂිතද?",
     "status.safety": "ආරක්ෂිත තත්ත්වය",
     "status.safe": "ආරක්ෂිතයි",
     "status.needHelp": "උදව් අවශ්‍යයි",
@@ -380,6 +389,7 @@ export const translations = {
     "status.statusSentDesc": "ඔබගේ තත්ත්වය අසල ඇති උපාංග වෙත බෙදා ඇත.",
 
     "hazard.title": "අනතුරක් වාර්තා කරන්න",
+    "hazard.subtitle": "අසලින් දුටු අනතුරක් වාර්තා කරන්න.",
     "hazard.offlineMesh": "නොබැඳි — මෙෂ් සක්‍රීයයි",
     "hazard.category": "ප්‍රවර්ගය තෝරන්න",
     "hazard.flood": "ගංවතුර",
@@ -541,6 +551,7 @@ export const translations = {
     "common.peersNearby": "அருகில் சகர்கள்",
     "common.syncedAgo": "{time} முன் ஒத்திசைக்கப்பட்டது",
     "common.justNow": "இப்போது",
+    "common.sending": "அனுப்புகிறது…",
 
     "home.title": "முகப்பு",
     "home.emergencyHelp": "அவசர உதவி",
@@ -556,6 +567,7 @@ export const translations = {
     "home.cancelSos": "SOS ரத்து செய்",
     "home.cancelSosConfirm": "உங்கள் ஆபத்து சிக்னலை ரத்து செய்ய நிச்சயமாக விரும்புகிறீர்களா?",
     "home.yesCancel": "ஆம், ரத்து செய்",
+    "home.keepSos": "SOS ஐத் தக்கவைக்கவும்",
     "home.reportHazard": "ஆபத்தை தெரிவிக்கவும்",
     "home.reportHazardDesc": "வெள்ளம், தீ, அல்லது மூடப்பட்ட சாலைகள்",
     "home.myStatus": "எனது நிலை",
@@ -609,6 +621,8 @@ export const translations = {
     "activity.sosCancelled": "SOS ரத்து செய்யப்பட்டது",
 
     "status.title": "எனது நிலை",
+    "status.subtitle": "இது உங்கள் SOS உடன் அனுப்பப்படும் — பதிலளிப்போர் உங்களுக்கு முன்னுரிமை தரும்.",
+    "status.areYouSafe": "நீங்கள் பாதுகாப்பாக இருக்கிறீர்களா?",
     "status.safety": "பாதுகாப்பு நிலை",
     "status.safe": "பாதுகாப்பாக",
     "status.needHelp": "உதவி தேவை",
@@ -630,6 +644,7 @@ export const translations = {
     "status.statusSentDesc": "உங்கள் நிலை அருகில் உள்ள சாதனங்களுடன் பகிரப்பட்டது.",
 
     "hazard.title": "ஆபத்தை தெரிவிக்கவும்",
+    "hazard.subtitle": "அருகில் கண்ட ஆபத்தை தெரிவிக்கவும்.",
     "hazard.offlineMesh": "இணைப்பில்லை — மெஷ் செயலில்",
     "hazard.category": "பிரிவைத் தேர்ந்தெடுக்கவும்",
     "hazard.flood": "வெள்ளம்",

@@ -16,7 +16,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../theme/ThemeContext';
 import { useMeshSync } from '../context/MeshSyncContext';
-import { ROLE } from '../backend/store/hotState';
+import { ROLE, setLastCloudSyncHlc, clearActiveSosIncidentId } from '../backend/store/hotState';
+import { formatHlc } from '../backend/shared/hlc';
+import { getStore } from '../backend/store/eventStore';
 import TopAppBar from '../components/TopAppBar';
 import { clearResponderSession } from '../utils/storage';
 
@@ -87,7 +89,7 @@ export default function ProfileScreen({ navigation }) {
   const resetAppData = () => {
     Alert.alert(
       'Reset App Data',
-      'This will erase all local profile and session data on this device.',
+      'This will erase all local profile, reports, and session data on this device.',
       [
         {
           text: 'Cancel',
@@ -100,6 +102,12 @@ export default function ProfileScreen({ navigation }) {
             try {
               await AsyncStorage.removeItem(PROFILE_STORAGE_KEY);
               await clearResponderSession();
+              clearActiveSosIncidentId();
+              setLastCloudSyncHlc(formatHlc(Date.now(), 0, '00000000'));
+              const store = getStore();
+              if (typeof store.clearAll === 'function') {
+                await store.clearAll();
+              }
               logoutResponder();
               if (refreshUserProfile) {
                 await refreshUserProfile();
@@ -107,7 +115,7 @@ export default function ProfileScreen({ navigation }) {
 
               Alert.alert(
                 'Data Reset',
-                'Your local profile has been removed.'
+                'Your local profile and reports have been cleared.'
               );
 
               navigation.replace('Onboarding');

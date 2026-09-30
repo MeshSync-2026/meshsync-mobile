@@ -14,6 +14,9 @@ import {
   setLastStatus,
   getLandmark,
   setLandmark,
+  setLastCloudSyncHlc,
+  hasCompletedProdCleanup,
+  markProdCleanupComplete,
   ROLE,
 } from "../backend/store/hotState";
 import { BleTransport } from "../backend/transport/bleTransport";
@@ -30,6 +33,7 @@ import {
   createCancelledEvent,
 } from "../backend/eventCreator";
 import { deriveSeverity } from "../backend/shared/severity";
+import { formatHlc } from "../backend/shared/hlc";
 import { ACTOR_ROLE, SEVERITY } from "../backend/shared/enums";
 import { registerDevice } from "../backend/cloudApi";
 import { startHeartbeat, stopHeartbeat } from "../backend/heartbeatService";
@@ -68,6 +72,14 @@ export function MeshSyncProvider({ children }) {
     setRegisteredState(isRegistered());
     setAssignedZoneIdState(getAssignedZoneId());
 
+    const needsProdCleanup = !hasCompletedProdCleanup();
+    if (needsProdCleanup) {
+      clearActiveSosIncidentId();
+      setActiveSosState(null);
+      setLastCloudSyncHlc("1790742600000|00000|00000000");
+      markProdCleanupComplete();
+    }
+
     // Load user profile
     getProfile().then((prof) => {
       if (prof) setUserProfile(prof);
@@ -79,27 +91,39 @@ export function MeshSyncProvider({ children }) {
       try {
         const allEvents = await store.getAll();
         const mine = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) === currentNodeId);
-        const relayed = allEvents.filter((e) => (e.origin_node_id || e.originNodeId) !== currentNodeId);
+        const relayed =
+          typeof store.getRelayedCount === "function"
+            ? await store.getRelayedCount(currentNodeId)
+            : 0;
         setMyEvents(mine);
-        setRelayedCount(relayed.length);
+        setRelayedCount(relayed);
       } catch (err) {
         console.error("[MeshSyncContext] Error fetching events:", err);
       }
     };
 
-    // 1. Initial state hydration
-    store.getProjection().then((initialProjection) => {
-      if (initialProjection) {
-        setIncidents(initialProjection.incidents || []);
-        setResponders(initialProjection.responders || []);
-        setHistory(initialProjection.history || []);
-        setAssignments(initialProjection.assignments || []);
+    const bootstrapStore = async () => {
+      try {
+        // One-time cleanup of stale/mock events previously downloaded into local SQLite
+        if (needsProdCleanup && typeof store.clearAll === "function") {
+          await store.clearAll();
+        }
+
+        const initialProjection = await store.getProjection();
+        if (initialProjection) {
+          setIncidents(initialProjection.incidents || []);
+          setResponders(initialProjection.responders || []);
+          setHistory(initialProjection.history || []);
+          setAssignments(initialProjection.assignments || []);
+        }
+      } catch (err) {
+        console.error("[MeshSyncContext] Error loading initial projection:", err);
+      } finally {
+        await refreshEventCounts();
       }
-      refreshEventCounts();
-    }).catch((err) => {
-      console.error("[MeshSyncContext] Error loading initial projection:", err);
-      refreshEventCounts();
-    });
+    };
+
+    bootstrapStore();
 
     // 2. Subscribe to store projection updates
     const unsubscribeStore = store.subscribe((projection) => {
@@ -119,11 +143,10 @@ export function MeshSyncProvider({ children }) {
     ble.start();
     ws.start();
 
-    // 4. Track live peer counts
+    // 4. Track live BLE peer counts
     const peerInterval = setInterval(() => {
       const blePeers = ble.getPeerCount ? ble.getPeerCount() : 0;
-      const wsPeers = ws.getPeerCount ? ws.getPeerCount() : 0;
-      setPeerCount(blePeers + wsPeers);
+      setPeerCount(blePeers);
     }, 3000);
 
     // 5. Start Cloud Sync listener

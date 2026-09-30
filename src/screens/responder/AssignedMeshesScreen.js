@@ -262,7 +262,8 @@ export default function AssignedMeshesScreen({ navigation }) {
               if (!isOnDuty) return;
 
               navigation.navigate('IncidentList', {
-                mesh,
+                selectedMeshId: mesh.id,
+                selectedMeshName: mesh.name,
               });
             }}
             style={({ pressed }) => [

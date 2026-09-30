@@ -119,8 +119,43 @@ export const radarPeers = [
   { id: 'p6', label: 'Peer 4', type: 'mesh', top: null, bottom: '15%', left: '60%' },
 ];
 
-
 export const responderCredentials = {
   responderId: 'RSP-001',
   pin: '1234',
 };
+
+export const incidents = [
+  {
+    id: 'INC-1042',
+    type: 'Medical Emergency',
+    location: 'Batticaloa Central',
+    meshId: 'MS-001',
+    distance: '1.2 km',
+    severity: 'HIGH',
+    status: 'LIVE',
+    assignment: 'DISPATCHED',
+    time: '2 min ago',
+  },
+  {
+    id: 'INC-1039',
+    type: 'Trapped Person',
+    location: 'Kallady Bridge',
+    meshId: 'MS-001',
+    distance: '3.8 km',
+    severity: 'MEDIUM',
+    status: 'UNCONFIRMED',
+    assignment: 'SELF-ASSIGNED',
+    time: '8 min ago',
+  },
+  {
+    id: 'INC-1035',
+    type: 'Flooding',
+    location: 'Iruthayapuram',
+    meshId: 'MS-002',
+    distance: '6.4 km',
+    severity: 'LOW',
+    status: 'LIVE',
+    assignment: 'NONE',
+    time: '15 min ago',
+  },
+];

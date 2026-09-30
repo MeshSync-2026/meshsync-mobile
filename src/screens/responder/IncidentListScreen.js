@@ -6,51 +6,43 @@ import {
   ScrollView,
   Pressable,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { incidents as allIncidents } from '../../data/mockData';
 
-const incidents = [
-  {
-    id: 'INC-1042',
-    type: 'Medical Emergency',
-    location: 'Batticaloa Central',
-    distance: '1.2 km',
-    severity: 'HIGH',
-    status: 'LIVE',
-    assignment: 'DISPATCHED',
-    time: '2 min ago',
-  },
-  {
-    id: 'INC-1039',
-    type: 'Trapped Person',
-    location: 'Kallady Bridge',
-    distance: '3.8 km',
-    severity: 'MEDIUM',
-    status: 'UNCONFIRMED',
-    assignment: 'SELF-ASSIGNED',
-    time: '8 min ago',
-  },
-  {
-    id: 'INC-1035',
-    type: 'Flooding',
-    location: 'Iruthayapuram',
-    distance: '6.4 km',
-    severity: 'LOW',
-    status: 'LIVE',
-    assignment: 'NONE',
-    time: '15 min ago',
-  },
-];
+export default function IncidentListScreen({ route, navigation }) {
+  const { selectedMeshId, selectedMeshName } = route?.params || {};
 
-export default function IncidentListScreen({ navigation }) {
+  const incidents = selectedMeshId
+    ? allIncidents.filter((item) => item.meshId === selectedMeshId)
+    : allIncidents;
+
   return (
     <View style={styles.container}>
 
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>RESPONDER OPERATIONS</Text>
-          <Text style={styles.title}>Good afternoon</Text>
+        {selectedMeshId && (
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
+          </Pressable>
+        )}
+
+        <View style={{ flex: 1, marginRight: 12 }}>
+          <Text style={styles.eyebrow}>
+            {selectedMeshId ? `MESH: ${selectedMeshId}` : 'RESPONDER OPERATIONS'}
+          </Text>
+          <Text style={styles.title} numberOfLines={1}>
+            {selectedMeshName ? selectedMeshName : 'Good afternoon'}
+          </Text>
           <Text style={styles.subtitle}>
-            Stay aware. Stay connected.
+            {selectedMeshId
+              ? `Showing active incidents in ${selectedMeshName}`
+              : 'Stay aware. Stay connected.'}
           </Text>
         </View>
 
@@ -93,14 +85,16 @@ export default function IncidentListScreen({ navigation }) {
         <View style={styles.summaryRow}>
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryNumber}>12</Text>
+            <Text style={styles.summaryNumber}>{incidents.length}</Text>
             <Text style={styles.summaryLabel}>
               ACTIVE
             </Text>
           </View>
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryNumber}>3</Text>
+            <Text style={styles.summaryNumber}>
+              {incidents.filter((item) => item.assignment !== 'NONE').length}
+            </Text>
             <Text style={styles.summaryLabel}>
               MY TASKS
             </Text>
@@ -142,112 +136,132 @@ export default function IncidentListScreen({ navigation }) {
         {/* My assignments */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
-            My assignments
+            {selectedMeshName ? `${selectedMeshName} Incidents` : 'My assignments'}
           </Text>
 
-          <Pressable
-            onPress={() =>
-              navigation.navigate('AssignedMeshes')
-            }
-          >
-            <Text style={styles.viewAll}>
-              View all
-            </Text>
-          </Pressable>
+          {selectedMeshId ? (
+            <Pressable
+              onPress={() =>
+                navigation.setParams({ selectedMeshId: undefined, selectedMeshName: undefined })
+              }
+            >
+              <Text style={styles.viewAll}>
+                Show all
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() =>
+                navigation.navigate('AssignedMeshes')
+              }
+            >
+              <Text style={styles.viewAll}>
+                View all
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Incident cards */}
-        {incidents.map((incident) => (
-          <Pressable
-            key={incident.id}
-            style={styles.incidentCard}
-            onPress={() =>
-              navigation.navigate(
-                'IncidentDetails',
-                {
-                  incident,
-                }
-              )
-            }
-          >
+        {incidents.length > 0 ? (
+          incidents.map((incident) => (
+            <Pressable
+              key={incident.id}
+              style={styles.incidentCard}
+              onPress={() =>
+                navigation.navigate(
+                  'IncidentDetails',
+                  {
+                    incident,
+                  }
+                )
+              }
+            >
 
-            <View style={styles.cardTop}>
+              <View style={styles.cardTop}>
 
-              <View style={styles.incidentTitleArea}>
+                <View style={styles.incidentTitleArea}>
+                  <View
+                    style={[
+                      styles.assignmentDot,
+                      incident.assignment === 'DISPATCHED'
+                        ? styles.blueDot
+                        : incident.assignment === 'SELF-ASSIGNED'
+                        ? styles.yellowDot
+                        : styles.grayDot,
+                    ]}
+                  />
+
+                  <View>
+                    <Text style={styles.incidentType}>
+                      {incident.type}
+                    </Text>
+
+                    <Text style={styles.incidentId}>
+                      {incident.id}
+                    </Text>
+                  </View>
+                </View>
+
                 <View
                   style={[
-                    styles.assignmentDot,
-                    incident.assignment === 'DISPATCHED'
-                      ? styles.blueDot
-                      : incident.assignment === 'SELF-ASSIGNED'
-                      ? styles.yellowDot
-                      : styles.grayDot,
+                    styles.severityBadge,
+                    incident.severity === 'HIGH'
+                      ? styles.highBadge
+                      : incident.severity === 'MEDIUM'
+                      ? styles.mediumBadge
+                      : styles.lowBadge,
                   ]}
-                />
-
-                <View>
-                  <Text style={styles.incidentType}>
-                    {incident.type}
-                  </Text>
-
-                  <Text style={styles.incidentId}>
-                    {incident.id}
+                >
+                  <Text style={styles.severityText}>
+                    {incident.severity}
                   </Text>
                 </View>
+
               </View>
 
-              <View
-                style={[
-                  styles.severityBadge,
-                  incident.severity === 'HIGH'
-                    ? styles.highBadge
-                    : incident.severity === 'MEDIUM'
-                    ? styles.mediumBadge
-                    : styles.lowBadge,
-                ]}
-              >
-                <Text style={styles.severityText}>
-                  {incident.severity}
+              <View style={styles.divider} />
+
+              <View style={styles.cardInfoRow}>
+
+                <Text style={styles.location}>
+                  {incident.location}
                 </Text>
+
+                <Text style={styles.distance}>
+                  {incident.distance}
+                </Text>
+
               </View>
 
-            </View>
+              <View style={styles.cardBottom}>
 
-            <View style={styles.divider} />
+                <Text
+                  style={[
+                    styles.statusText,
+                    incident.status === 'LIVE'
+                      ? styles.liveText
+                      : styles.unconfirmedText,
+                  ]}
+                >
+                  ● {incident.status}
+                </Text>
 
-            <View style={styles.cardInfoRow}>
+                <Text style={styles.time}>
+                  {incident.time}
+                </Text>
 
-              <Text style={styles.location}>
-                {incident.location}
-              </Text>
+              </View>
 
-              <Text style={styles.distance}>
-                {incident.distance}
-              </Text>
-
-            </View>
-
-            <View style={styles.cardBottom}>
-
-              <Text
-                style={[
-                  styles.statusText,
-                  incident.status === 'LIVE'
-                    ? styles.liveText
-                    : styles.unconfirmedText,
-                ]}
-              >
-                ● {incident.status}
-              </Text>
-
-              <Text style={styles.time}>
-                {incident.time}
-              </Text>
-
-            </View>
-
-          </Pressable>
-        ))}
+            </Pressable>
+          ))
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>
+              No active incidents reported in this mesh area.
+            </Text>
+          </View>
+        )}
 
         <View style={{ height: 30 }} />
 
@@ -269,6 +283,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  backButton: {
+    marginRight: 12,
+    padding: 4,
+    justifyContent: 'center',
     alignItems: 'center',
   },
 
@@ -579,5 +600,19 @@ const styles = StyleSheet.create({
   time: {
     fontSize: 10,
     color: '#9CA3AF',
+  },
+
+  emptyContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+
+  emptyText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '600',
   },
 });

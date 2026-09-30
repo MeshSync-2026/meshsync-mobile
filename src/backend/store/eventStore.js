@@ -134,6 +134,51 @@ class EventStore {
     });
   }
 
+  async getRelayedCount(currentNodeId) {
+    try {
+      const rows = await processedBroadcast.query().fetch();
+      if (!Array.isArray(rows)) return 0;
+      return rows.filter((r) => {
+        const origin = r.originNodeId || r.origin_node_id;
+        return (
+          origin &&
+          origin !== currentNodeId &&
+          origin !== "CLOUD-0000" &&
+          origin !== "node-test" &&
+          origin !== "test-cli"
+        );
+      }).length;
+    } catch (err) {
+      return 0;
+    }
+  }
+
+  async clearAll() {
+    try {
+      const events = await meshEvents.query().fetch();
+      const processed = await processedBroadcast.query().fetch();
+      await database.write(async () => {
+        for (const rec of events) {
+          if (typeof rec.destroyPermanently === "function") {
+            await rec.destroyPermanently();
+          } else if (typeof rec.markAsDeleted === "function") {
+            await rec.markAsDeleted();
+          }
+        }
+        for (const rec of processed) {
+          if (typeof rec.destroyPermanently === "function") {
+            await rec.destroyPermanently();
+          } else if (typeof rec.markAsDeleted === "function") {
+            await rec.markAsDeleted();
+          }
+        }
+      });
+      await this._notify();
+    } catch (err) {
+      console.error("[eventStore] Failed to clear store:", err);
+    }
+  }
+
   async getProjection() {
     const events = await this.getAll();
     return foldPipeline(events, Date.now());

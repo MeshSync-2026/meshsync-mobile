@@ -90,7 +90,11 @@ try {
 
 export const storage = storageInstance;
 
-export const ROLE = { CIVILIAN: "CIVILIAN", RESPONDER: "RESPONDER" };
+export const ROLE = {
+  CIVILIAN: "CIVILIAN",
+  CIVILIAN_RESPONDER: "CIVILIAN_RESPONDER",
+  RESPONDER: "RESPONDER", // authorized (Command Center login)
+};
 
 export async function hydrateHotState() {
   try {

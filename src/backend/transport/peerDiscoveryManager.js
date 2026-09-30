@@ -1,7 +1,7 @@
 // peerDiscoveryManager.js
 // Production Native BLE Mesh Peer Discovery & GATT Sync Manager
 
-import { Platform, PermissionsAndroid, NativeModules, NativeEventEmitter } from "react-native";
+import { Alert, Linking, Platform, PermissionsAndroid, NativeModules, NativeEventEmitter } from "react-native";
 import { BleManager } from "react-native-ble-plx";
 import { Buffer } from "buffer";
 import { diagLog } from "../utils/diagnosticLogger";
@@ -23,23 +23,33 @@ export async function requestBluetoothPermissions() {
 
   try {
     if (Platform.Version >= 31) {
+      // Android 12+: BLE runtime permissions only (single Nearby Devices prompt).
+      // BLUETOOTH_SCAN is declared neverForLocation in the manifest, so location
+      // is not required for scanning. GPS is requested separately by expo-location.
       const permissions = [
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ];
-      diagLog.info("PERM", "Requesting Bluetooth & Location permissions from user...");
+      diagLog.info("PERM", "Requesting Nearby Devices (Bluetooth) permissions from user...");
       const granted = await PermissionsAndroid.requestMultiple(permissions);
       diagLog.info("PERM", "Permissions result", granted);
       diagLog.updateState({ permissions: granted });
-      const ok = Object.values(granted).every(
-        (status) => status === PermissionsAndroid.RESULTS.GRANTED
+      const ok = permissions.every(
+        (perm) => granted[perm] === PermissionsAndroid.RESULTS.GRANTED
       );
       if (ok) {
         diagLog.success("PERM", "Mandatory Bluetooth permissions granted!");
       } else {
         diagLog.error("PERM", "Mandatory Bluetooth permissions denied!", granted);
+        Alert.alert(
+          "Bluetooth permission needed",
+          "MeshSync needs Nearby Devices permission for offline mesh sync. If you denied it, enable it in Settings.",
+          [
+            { text: "Not now", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ]
+        );
       }
       return ok;
     } else {

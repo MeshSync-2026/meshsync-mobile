@@ -59,7 +59,7 @@ export default function ResponderLoginScreen({
    *
    * Responder ID is entered
    * AND
-   * PIN contains at least 4 digits
+   * Password contains at least 4 characters
    */
 
   const canLogin =
@@ -83,7 +83,7 @@ export default function ResponderLoginScreen({
 
     try {
       const enteredId =
-        responderId.trim().toUpperCase();
+        responderId.trim();
 
       const enteredPin =
         pin.trim();
@@ -95,7 +95,7 @@ export default function ResponderLoginScreen({
 
       if (!result.success) {
         setLoginError(
-          result.error || 'Invalid Responder ID or Security PIN.'
+          result.error || 'Invalid Responder ID or password.'
         );
         return;
       }
@@ -471,7 +471,7 @@ export default function ResponderLoginScreen({
                     '80'
                   }
 
-                  autoCapitalize="characters"
+                  autoCapitalize="none"
 
                   autoCorrect={false}
 
@@ -514,7 +514,7 @@ export default function ResponderLoginScreen({
                   },
                 ]}
               >
-                SECURITY PIN
+                PASSWORD
               </Text>
 
 
@@ -549,35 +549,24 @@ export default function ResponderLoginScreen({
                   value={pin}
 
                   onChangeText={(text) => {
-
-                    /*
-                     * Allow numbers only.
-                     */
-
-                    const numericValue =
-                      text.replace(
-                        /[^0-9]/g,
-                        ''
-                      );
-
-                    setPin(numericValue);
+                    setPin(text);
                     setLoginError('');
                   }}
 
-                  placeholder="Enter your PIN"
+                  placeholder="Enter your password"
 
                   placeholderTextColor={
                     colors.onSurfaceVariant +
                     '80'
                   }
 
-                  keyboardType="number-pad"
+                  keyboardType="default"
 
                   secureTextEntry={
                     !showPin
                   }
 
-                  maxLength={6}
+                  maxLength={64}
 
                   autoComplete="password"
 

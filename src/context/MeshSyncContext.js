@@ -492,7 +492,7 @@ export function MeshSyncProvider({ children }) {
    */
   const loginResponder = useCallback(async ({ username, password }) => {
     try {
-      const normalizedId = (username || "").trim().toUpperCase();
+      const normalizedId = (username || "").trim();
       const normalizedPin = (password || "").trim();
       let authResult = null;
 
@@ -502,10 +502,13 @@ export function MeshSyncProvider({ children }) {
         // Offline fallback: only reuse a session that was previously
         // server-verified on THIS device, gated by the hashed PIN.
         const cachedSession = await getResponderSession();
+        const idMatches =
+          cachedSession &&
+          (cachedSession.responderId === normalizedId ||
+            cachedSession.responderId === normalizedId.toUpperCase()); // legacy uppercase-saved sessions
 
         if (
-          cachedSession &&
-          cachedSession.responderId === normalizedId &&
+          idMatches &&
           (cachedSession.pinHash === hashPin(normalizedPin) ||
             cachedSession.pin === normalizedPin) // legacy plaintext sessions
         ) {

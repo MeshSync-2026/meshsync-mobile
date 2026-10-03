@@ -314,7 +314,7 @@ export default function HomeScreen({ navigation }) {
                 : null;
             const sevColor = SEVERITY_COLOR[inc.severity_level] || colors.status.critical;
             return (
-              <View key={inc.id} style={[styles.incidentCard, { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle }, shadows.card]}>
+              <View key={inc.incident_id || inc.id} style={[styles.incidentCard, { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle }, shadows.card]}>
                 <View style={styles.incidentCardLeft}>
                   <View style={[styles.severityDot, { backgroundColor: sevColor }]} />
                   <View style={{ flex: 1 }}>
@@ -329,7 +329,7 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <TouchableOpacity
                   style={[styles.quickRespondBtn, { backgroundColor: colors.accent.primary }]}
-                  onPress={() => handleQuickRespond(inc.id)}
+                  onPress={() => handleQuickRespond(inc.incident_id || inc.id)}
                   activeOpacity={0.7}
                 >
                   <Ionicons name="hand-right" size={16} color={colors.accent.onPrimary} />

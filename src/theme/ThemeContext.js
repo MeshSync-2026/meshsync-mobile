@@ -28,22 +28,11 @@ export function ThemeProvider({ children }) {
     AsyncStorage.setItem(THEME_KEY, next).catch(() => {});
   };
 
-  const toggleScheme = (current) => {
-    const from = current ?? scheme;
-    const next = from === 'dark' ? 'light' : 'dark';
-    if (next === 'light') {
-      // Warn before leaving dark — OLED battery guidance (§10.7)
-      Alert.alert(
-        'Switch to Light theme?',
-        'We recommend Dark theme to conserve battery during emergencies. Light theme uses more power on OLED screens. You can switch back anytime.',
-        [
-          { text: 'Keep Dark', style: 'cancel' },
-          { text: 'Switch anyway', style: 'destructive', onPress: () => setScheme('light') },
-        ]
-      );
-      return;
-    }
-    setScheme('dark');
+  const toggleScheme = (explicitNext) => {
+    const next = (typeof explicitNext === 'string' && (explicitNext === 'dark' || explicitNext === 'light'))
+      ? explicitNext
+      : (scheme === 'dark' ? 'light' : 'dark');
+    setScheme(next);
   };
 
   const value = useMemo(() => {

@@ -79,6 +79,7 @@ export const translations = {
     "nearby.legendHazard": "Hazard Report",
     "nearby.legendResolved": "Resolved",
     "nearby.legendYou": "You",
+    "nearby.myReport": "My Report",
 
     // My Activity screen
     "activity.title": "My Activity",
@@ -346,6 +347,7 @@ export const translations = {
     "nearby.legendHazard": "අනතුරු වාර්තාව",
     "nearby.legendResolved": "විසඳා ඇත",
     "nearby.legendYou": "ඔබ",
+    "nearby.myReport": "මගේ වාර්තාව",
 
     "activity.title": "මගේ ක්‍රියාකාරකම්",
     "activity.offlineMesh": "නොබැඳි — මෙෂ් සක්‍රීයයි",
@@ -601,6 +603,7 @@ export const translations = {
     "nearby.legendHazard": "ஆபத்து அறிக்கை",
     "nearby.legendResolved": "தீர்க்கப்பட்டது",
     "nearby.legendYou": "நீங்கள்",
+    "nearby.myReport": "எனது அறிக்கை",
 
     "activity.title": "எனது செயல்பாடுகள்",
     "activity.offlineMesh": "இணைப்பில்லை — மெஷ் செயலில்",

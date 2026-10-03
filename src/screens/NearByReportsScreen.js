@@ -308,7 +308,13 @@ export default function NearbyScreen({ navigation }) {
     const iconName = CATEGORY_ICON[item.category_code] || 'alert-circle';
     const pinColor = getPinColor(item, colors);
     const title = getIncidentTitle(item);
-    const isOwn = item.creator_node_id === getNodeId();
+    const myNodeId = getNodeId();
+    const isOwn = Boolean(
+      (item.creator_node_id && item.creator_node_id === myNodeId) ||
+      (item.origin_node_id && item.origin_node_id === myNodeId) ||
+      (item.creatorNodeId && item.creatorNodeId === myNodeId) ||
+      (item.originNodeId && item.originNodeId === myNodeId)
+    );
     const sevConfig = getSeverityConfig(item.severity_level || 2);
 
     return (
@@ -316,7 +322,7 @@ export default function NearbyScreen({ navigation }) {
         key={item.id}
         style={[
           styles.card,
-          { backgroundColor: colors.bg.secondary, borderColor: colors.border.subtle },
+          { backgroundColor: colors.bg.secondary, borderColor: isOwn ? colors.accent.primary : colors.border.subtle },
           isResolved && styles.cardResolved,
           isUrgent && !isResolved && { borderLeftWidth: 3, borderLeftColor: sevConfig.color },
         ]}
@@ -333,11 +339,21 @@ export default function NearbyScreen({ navigation }) {
               <Text style={[styles.cardTitle, { color: isResolved ? colors.text.tertiary : colors.text.primary }]} numberOfLines={1}>
                 {title}
               </Text>
-              {isUrgent && !isResolved && (
-                <View style={[styles.severityBadge, { backgroundColor: sevConfig.color }]}>
-                  <Text style={styles.severityBadgeText}>{sevConfig.label}</Text>
-                </View>
-              )}
+              <View style={styles.badgeRow}>
+                {isOwn && (
+                  <View style={[styles.ownBadge, { backgroundColor: colors.accent.primary }]}>
+                    <Ionicons name="person" size={10} color={colors.accent.onPrimary} />
+                    <Text style={[styles.ownBadgeText, { color: colors.accent.onPrimary }]}>
+                      {t('nearby.myReport') || 'My Report'}
+                    </Text>
+                  </View>
+                )}
+                {isUrgent && !isResolved && (
+                  <View style={[styles.severityBadge, { backgroundColor: sevConfig.color }]}>
+                    <Text style={styles.severityBadgeText}>{sevConfig.label}</Text>
+                  </View>
+                )}
+              </View>
             </View>
             <View style={styles.cardMeta}>
               <View style={styles.metaItem}>
@@ -563,6 +579,9 @@ const styles = StyleSheet.create({
   cardContent: { flex: 1 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
   cardTitle: { fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ownBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  ownBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
   severityBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   severityBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
   cardMeta: { flexDirection: 'row', gap: 12, marginTop: 4 },

@@ -28,7 +28,7 @@ function detectSystemLang() {
 }
 
 export function AppProvider({ children }) {
-  const { colors, spacing, radius, typography, shadows } = useTheme();
+  const { colors, spacing, radius, typography, shadows, isDark, scheme, toggleScheme, setScheme } = useTheme();
   const { activeRole, isRegistered } = useMeshSync();
 
   const [lang, setLangState] = useState('en');
@@ -71,6 +71,10 @@ export function AppProvider({ children }) {
       radius,
       typography,
       shadows,
+      isDark,
+      scheme,
+      toggleScheme,
+      setScheme,
       lang,
       setLang,
       t,
@@ -79,7 +83,7 @@ export function AppProvider({ children }) {
       isResponder,
       isAuthorized,
     }),
-    [colors, spacing, radius, typography, shadows, lang, setLang, t, isCivilian, isResponder, isAuthorized]
+    [colors, spacing, radius, typography, shadows, isDark, scheme, toggleScheme, setScheme, lang, setLang, t, isCivilian, isResponder, isAuthorized]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

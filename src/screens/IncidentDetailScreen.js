@@ -165,6 +165,14 @@ export default function IncidentDetailScreen({ route, navigation }) {
 
   const arrowRotation = relativeBearing != null ? relativeBearing : bearing ?? 0;
 
+  const myNodeId = getNodeId();
+  const isOwn = Boolean(
+    (incident.creator_node_id && incident.creator_node_id === myNodeId) ||
+    (incident.origin_node_id && incident.origin_node_id === myNodeId) ||
+    (incident.creatorNodeId && incident.creatorNodeId === myNodeId) ||
+    (incident.originNodeId && incident.originNodeId === myNodeId)
+  );
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.bg.primary }]} contentContainerStyle={{ paddingBottom: spacing.xxl }}>
       {/* Header */}
@@ -175,10 +183,20 @@ export default function IncidentDetailScreen({ route, navigation }) {
         <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
           {incident.landmark_name || `Incident ${(incident.id || '').substring(0, 12)}`}
         </Text>
-        <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(incident.confidence_code, colors) + '22' }]}>
-          <Text style={[styles.confidenceText, { color: getConfidenceColor(incident.confidence_code, colors) }]}>
-            {CONFIDENCE_LABEL[incident.confidence_code] || '—'}
-          </Text>
+        <View style={styles.headerBadges}>
+          {isOwn && (
+            <View style={[styles.ownBadge, { backgroundColor: colors.accent.primary }]}>
+              <Ionicons name="person" size={10} color={colors.accent.onPrimary} />
+              <Text style={[styles.ownBadgeText, { color: colors.accent.onPrimary }]}>
+                {t('nearby.myReport') || 'My Report'}
+              </Text>
+            </View>
+          )}
+          <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(incident.confidence_code, colors) + '22' }]}>
+            <Text style={[styles.confidenceText, { color: getConfidenceColor(incident.confidence_code, colors) }]}>
+              {CONFIDENCE_LABEL[incident.confidence_code] || '—'}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -349,7 +367,10 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   notFound: { padding: 40, textAlign: 'center', fontSize: 16 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingTop: 48, paddingBottom: 16 },
-  headerTitle: { fontSize: 18, fontWeight: '700', flex: 1 } ,
+  headerTitle: { fontSize: 18, fontWeight: '700', flex: 1 },
+  headerBadges: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ownBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 4, borderRadius: 6 },
+  ownBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
   confidenceBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
   confidenceText: { fontSize: 11, fontWeight: '700' },
   compassContainer: { alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
